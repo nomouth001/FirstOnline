@@ -3,7 +3,7 @@ from datetime import timedelta
 
 # 기본 설정
 SECRET_KEY = os.getenv('SECRET_KEY', 'your-secret-key-here')
-DEBUG = os.getenv('FLASK_DEBUG', 'True').lower() == 'true'
+DEBUG = os.getenv('FLASK_DEBUG', 'False').lower() == 'true'
 
 # 세션 설정
 SESSION_TYPE = 'filesystem'
@@ -79,6 +79,10 @@ SENDGRID_FROM_NAME = os.getenv('SENDGRID_FROM_NAME', '주식 분석 뉴스레터
 CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0')
 CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', 'redis://localhost:6379/0')
 
-# 디렉토리 생성
-for directory in ['logs', 'static/analysis', 'static/charts', 'static/debug', 'static/summaries', 'static/memos', 'static/multi_summaries', 'stock_lists']:
-    os.makedirs(directory, exist_ok=True) 
+# 디렉토리 생성 (배포 환경에서 안전하게)
+try:
+    for directory in ['logs', 'static/analysis', 'static/charts', 'static/debug', 'static/summaries', 'static/memos', 'static/multi_summaries', 'stock_lists']:
+        os.makedirs(directory, exist_ok=True)
+except Exception as e:
+    # 디렉토리 생성 실패시 로그만 남기고 계속 진행
+    print(f"디렉토리 생성 실패: {e}") 

@@ -8,8 +8,12 @@ from config import SECRET_KEY, SESSION_TYPE, PERMANENT_SESSION_LIFETIME, LOGGING
 from models import db, User
 
 # 로깅 설정을 가장 먼저 적용
-if not os.path.exists('logs'):
-    os.makedirs('logs')
+try:
+    if not os.path.exists('logs'):
+        os.makedirs('logs', exist_ok=True)
+except Exception:
+    # 로그 디렉토리 생성 실패시 현재 디렉토리 사용
+    pass
 
 # 로깅 설정 강제 적용
 logging.basicConfig(
@@ -84,16 +88,78 @@ app.register_blueprint(newsletter_bp, url_prefix='/newsletter')
 
 logger.info("Blueprint 등록 완료")
 
+# 애플리케이션 컨텍스트에서 데이터베이스 테이블 생성 (Blueprint 등록 후)
+with app.app_context():
+    try:
+        db.create_all()
+        logger.info("데이터베이스 테이블 생성 완료")
+        
+        # 기본 관리자 계정 생성 (존재하지 않는 경우)
+        from werkzeug.security import generate_password_hash
+        admin_user = User.query.filter_by(username='admin').first()
+        if not admin_user:
+            admin_user = User(
+                username='admin',
+                email='admin@example.com',
+                first_name='Admin',
+                last_name='User',
+                is_verified=True,
+                is_admin=True,
+                password_hash=generate_password_hash('NewsLetter2025!')
+            )
+            db.session.add(admin_user)
+            db.session.commit()
+            logger.info("기본 관리자 계정 생성 완료")
+        else:
+            logger.info("기본 관리자 계정이 이미 존재합니다")
+    except Exception as e:
+        logger.error(f"데이터베이스 초기화 오류: {e}")
+        # 에러가 발생해도 앱은 계속 실행
+
 @app.before_request
 def set_current_stock_list():
     """요청 전에 현재 주식 리스트를 설정합니다."""
+    # 첫 번째 요청시 데이터베이스 테이블 확인
+    try:
+        # 테이블 존재 여부 확인
+        with db.engine.connect() as conn:
+            conn.execute(db.text("SELECT 1 FROM users LIMIT 1"))
+    except:
+        # 테이블이 없으면 생성
+        try:
+            db.create_all()
+            logger.info("요청 처리 중 데이터베이스 테이블 생성")
+            
+            # 관리자 계정도 생성
+            from werkzeug.security import generate_password_hash
+            admin_user = User.query.filter_by(username='admin').first()
+            if not admin_user:
+                admin_user = User(
+                    username='admin',
+                    email='admin@example.com',
+                    first_name='Admin',
+                    last_name='User',
+                    is_verified=True,
+                    is_admin=True,
+                    password_hash=generate_password_hash('NewsLetter2025!')
+                )
+                db.session.add(admin_user)
+                db.session.commit()
+                logger.info("요청 처리 중 관리자 계정 생성")
+        except Exception as e:
+            logger.error(f"요청 처리 중 데이터베이스 생성 오류: {e}")
+    
     if current_user.is_authenticated and 'current_stock_list' not in session:
         # 사용자의 기본 리스트로 설정
         from models import StockList
-        default_list = StockList.query.filter_by(user_id=current_user.id, is_default=True).first()
-        if default_list:
-            session['current_stock_list'] = default_list.name
-        else:
+        try:
+            default_list = StockList.query.filter_by(user_id=current_user.id, is_default=True).first()
+            if default_list:
+                session['current_stock_list'] = default_list.name
+            else:
+                session['current_stock_list'] = 'default'
+        except Exception as e:
+            logger.error(f"주식 리스트 설정 오류: {e}")
             session['current_stock_list'] = 'default'
 
 @app.context_processor

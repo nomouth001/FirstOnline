@@ -11,7 +11,12 @@ python load_stock_lists.py
 
 import os
 import csv
-from app import create_app, db
+import sys
+
+# 현재 디렉토리를 Python 경로에 추가
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from app import app, db
 from models import User, StockList, Stock
 
 # CSV 파일명과 리스트 이름 매핑
@@ -82,7 +87,6 @@ def load_csv_to_db(csv_file_path, list_name, user_id):
 
 def main():
     """메인 함수"""
-    app = create_app()
     
     with app.app_context():
         # 관리자 사용자 찾기 (첫 번째 사용자를 관리자로 가정)

@@ -1,0 +1,83 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 로그 파일
+*.log
+logs/*.log
+
+# 데이터베이스
+*.db
+*.sqlite3
+instance/*.db
+
+# 임시 파일
+*.tmp
+*.temp
+
+# 분석 결과 파일들 (런타임에 생성됨)
+static/analysis/*
+static/charts/*
+static/debug/*
+static/summaries/*
+static/multi_summaries/*
+static/memos/*
+
+# 하지만 폴더는 유지
+!static/analysis/.gitkeep
+!static/charts/.gitkeep
+!static/debug/.gitkeep
+!static/summaries/.gitkeep
+!static/multi_summaries/.gitkeep
+!static/memos/.gitkeep
+
+# 환경변수 파일
+.env
+.env.local
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# 테스트 관련
+.coverage
+.pytest_cache/
+test_results/
+
+# 백업 파일
+*.bak
+*~ 

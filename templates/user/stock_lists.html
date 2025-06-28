@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+
+{% block title %}종목 리스트 관리{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <h2>📋 종목 리스트 관리</h2>
+        {% if current_user.is_administrator() %}
+            <a href="{{ url_for('user_stock.create_stock_list') }}" class="btn btn-success">➕ 새 리스트 만들기</a>
+        {% endif %}
+    </div>
+    <p>종목 리스트를 생성하고 관리하세요. 각 리스트에 종목을 추가하여 분석할 수 있습니다.</p>
+</div>
+
+<div class="card">
+    <h3>📊 내 종목 리스트 ({{ stock_lists|length }}개)</h3>
+    
+    {% if stock_lists %}
+        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 1rem;">
+            {% for stock_list in stock_lists %}
+                <div style="border: 1px solid #ddd; border-radius: 8px; padding: 1rem; background: white;">
+                    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.5rem;">
+                        <h4 style="margin: 0;">{{ stock_list.name }}</h4>
+                        {% if stock_list.is_default %}
+                            <span style="background: #007bff; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.8rem;">기본</span>
+                        {% endif %}
+                    </div>
+                    
+                    {% if stock_list.description %}
+                        <p style="color: #666; margin-bottom: 0.5rem; font-size: 0.9rem;">{{ stock_list.description }}</p>
+                    {% endif %}
+                    
+                    <p style="margin-bottom: 1rem; font-size: 0.9rem;">
+                        <strong>종목 수:</strong> {{ stock_list.stocks|length }}개
+                        {% if stock_list.is_public %}
+                            <span style="background: #28a745; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.8rem; margin-left: 0.5rem;">공개</span>
+                        {% endif %}
+                    </p>
+                    
+                    <p style="margin-bottom: 1rem; font-size: 0.8rem; color: #666;">
+                        생성일: {{ stock_list.created_at.strftime('%Y-%m-%d %H:%M') }}
+                    </p>
+                    
+                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                        <a href="{{ url_for('user_stock.view_stock_list', list_id=stock_list.id) }}" 
+                           class="btn btn-primary btn-sm">보기</a>
+                        <a href="{{ url_for('user_stock.edit_stock_list', list_id=stock_list.id) }}" 
+                           class="btn btn-success btn-sm">수정</a>
+                        <a href="{{ url_for('user_stock.add_stock', list_id=stock_list.id) }}" 
+                           class="btn btn-info btn-sm">종목 추가</a>
+                        
+                        <form method="POST" action="{{ url_for('user_stock.delete_stock_list', list_id=stock_list.id) }}" 
+                              style="display: inline;">
+                            <button type="submit" class="btn btn-danger btn-sm" 
+                                    onclick="return confirm('정말 이 리스트를 삭제하시겠습니까?\n\n리스트명: {{ stock_list.name }}\n종목 수: {{ stock_list.stocks|length }}개')">삭제</button>
+                        </form>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div style="text-align: center; padding: 2rem; color: #666;">
+            <p>아직 종목 리스트가 없습니다.</p>
+            {% if current_user.is_administrator() %}
+                <a href="{{ url_for('user_stock.create_stock_list') }}" class="btn btn-success">첫 번째 리스트 만들기</a>
+            {% endif %}
+        </div>
+    {% endif %}
+</div>
+
+<div class="card">
+    <h3>🚀 빠른 작업</h3>
+    <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+        {% if current_user.is_administrator() %}
+            <a href="{{ url_for('user_stock.create_stock_list') }}" class="btn btn-success">➕ 새 리스트</a>
+        {% endif %}
+        <a href="{{ url_for('user_stock.dashboard') }}" class="btn btn-primary">대시보드</a>
+        <a href="{{ url_for('summary_page') }}" class="btn btn-info">분석 요약</a>
+        <button type="button" class="btn btn-warning" onclick="cleanupDuplicateLists()">🧹 중복 리스트 정리</button>
+    </div>
+</div>
+
+<script>
+function cleanupDuplicateLists() {
+    if (confirm('중복된 리스트를 정리하시겠습니까?\n\n동일한 이름의 리스트가 여러 개 있는 경우, 가장 최근 것만 남기고 나머지는 삭제됩니다.\n종목은 최신 리스트로 이동됩니다.')) {
+        fetch('{{ url_for("user_stock.cleanup_duplicate_lists") }}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert(`중복 리스트 정리가 완료되었습니다.\n삭제된 리스트: ${data.deleted_count}개`);
+                location.reload();
+            } else {
+                alert('정리 중 오류가 발생했습니다: ' + data.error);
+            }
+        })
+        .catch(error => {
+            alert('요청 중 오류가 발생했습니다: ' + error);
+        });
+    }
+}
+</script>
+{% endblock %} 

@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+
+{% block title %}{{ user.username }}의 종목 리스트 - 관리자{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <h2>📊 {{ user.username }}의 종목 리스트</h2>
+        <a href="{{ url_for('admin.admin_users') }}" class="btn btn-secondary">← 사용자 목록으로</a>
+    </div>
+    
+    <div style="background: #f8f9fa; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+        <h4>사용자 정보</h4>
+        <p><strong>사용자명:</strong> {{ user.username }}</p>
+        <p><strong>이름:</strong> {{ user.get_full_name() }}</p>
+        <p><strong>이메일:</strong> {{ user.email }}</p>
+        <p><strong>가입일:</strong> {{ user.created_at.strftime('%Y-%m-%d %H:%M') }}</p>
+        <p><strong>상태:</strong> 
+            {% if user.is_active %}
+                <span style="color: green;">활성</span>
+            {% else %}
+                <span style="color: red;">비활성</span>
+            {% endif %}
+        </p>
+    </div>
+</div>
+
+<div class="card">
+    <h3>📋 종목 리스트 ({{ stock_lists|length }}개)</h3>
+    <form id="bulk-action-form" method="POST">
+        <div class="bulk-actions mb-3">
+            <button type="button" id="bulk-generate-btn" class="btn btn-primary">선택된 리스트 일괄 분석</button>
+            <span id="bulk-status" class="ml-2"></span>
+        </div>
+        
+        <table class="table">
+            <thead>
+                <tr>
+                    <th><input type="checkbox" id="select-all-checkbox"></th>
+                    <th>리스트명</th>
+                    <th>설명</th>
+                    <th>종목 수</th>
+                    <th>공개 여부</th>
+                    <th>생성일</th>
+                    <th>관리</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for stock_list in stock_lists %}
+                <tr>
+                    <td><input type="checkbox" class="list-checkbox" name="list_ids" value="{{ stock_list.id }}"></td>
+                    <td>
+                        <a href="{{ url_for('admin.user_stock_list_detail', user_id=user.id, list_id=stock_list.id) }}">{{ stock_list.name }}</a>
+                        {% if stock_list.is_default %}
+                            <span style="background: #007bff; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.8rem; margin-left: 0.5rem;">기본</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ stock_list.description|truncate(50) }}</td>
+                    <td>{{ stock_list.stocks|length }}</td>
+                    <td>{{ '공개' if stock_list.is_public else '비공개' }}</td>
+                    <td>{{ stock_list.created_at.strftime('%Y-%m-%d') }}</td>
+                    <td>
+                        <a href="{{ url_for('admin.edit_user_stock_list', user_id=user.id, list_id=stock_list.id) }}" class="btn btn-sm btn-secondary">수정</a>
+                        <form action="{{ url_for('admin.delete_user_stock_list', user_id=user.id, list_id=stock_list.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('정말 이 리스트를 삭제하시겠습니까?\n\n리스트명: {{ stock_list.name }}\n종목 수: {{ stock_list.stocks|length }}개\n{% if stock_list.is_default %}⚠️ 기본 리스트입니다!{% endif %}');">
+                            <button type="submit" class="btn btn-sm btn-danger">삭제</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </form>
+</div>
+
+<div class="card">
+    <h3>🚀 빠른 작업</h3>
+    <div style="display: flex; gap: 1rem; flex-wrap: wrap; align-items: center;">
+        <a href="{{ url_for('admin.admin_users') }}" class="btn btn-secondary">사용자 목록</a>
+        <a href="{{ url_for('admin.admin_dashboard') }}" class="btn btn-primary">관리자 대시보드</a>
+        <button type="button" class="btn btn-warning" onclick="cleanupUserDuplicateLists()">🧹 중복 리스트 정리</button>
+        <button type="button" class="btn btn-danger" onclick="deleteAllDefaultLists()">🗑️ 모든 기본 리스트 삭제</button>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const selectAllCheckbox = document.getElementById('select-all-checkbox');
+    const listCheckboxes = document.querySelectorAll('.list-checkbox');
+    const bulkGenerateBtn = document.getElementById('bulk-generate-btn');
+    const bulkStatus = document.getElementById('bulk-status');
+
+    if (selectAllCheckbox) {
+        selectAllCheckbox.addEventListener('change', function() {
+            listCheckboxes.forEach(checkbox => {
+                checkbox.checked = this.checked;
+            });
+        });
+    }
+
+    if (bulkGenerateBtn) {
+        bulkGenerateBtn.addEventListener('click', function() {
+            const selectedIds = Array.from(listCheckboxes)
+                                   .filter(checkbox => checkbox.checked)
+                                   .map(checkbox => checkbox.value);
+
+            if (selectedIds.length === 0) {
+                alert('분석할 리스트를 하나 이상 선택해주세요.');
+                return;
+            }
+
+            if (!confirm(`선택된 ${selectedIds.length}개의 리스트에 포함된 모든 종목의 분석을 시작하시겠습니까?`)) {
+                return;
+            }
+
+            this.disabled = true;
+            bulkStatus.textContent = '분석을 요청 중입니다...';
+
+            fetch("{{ url_for('admin.bulk_generate_for_user_lists', user_id=user.id) }}", {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ list_ids: selectedIds })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    bulkStatus.textContent = data.message;
+                    alert(data.message);
+                } else {
+                    bulkStatus.textContent = '오류: ' + data.error;
+                    alert('오류: ' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                bulkStatus.textContent = '클라이언트 측 오류가 발생했습니다.';
+                alert('클라이언트 측 오류가 발생했습니다.');
+            })
+            .finally(() => {
+                this.disabled = false;
+            });
+        });
+    }
+});
+
+// 관리자 전용 기능들
+function cleanupUserDuplicateLists() {
+    if (confirm('{{ user.username }}의 중복된 리스트를 정리하시겠습니까?\n\n동일한 이름의 리스트가 여러 개 있는 경우, 가장 최근 것만 남기고 나머지는 삭제됩니다.\n종목은 최신 리스트로 이동됩니다.')) {
+        fetch('{{ url_for("admin.admin_cleanup_user_duplicate_lists", user_id=user.id) }}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                let message = `중복 리스트 정리가 완료되었습니다.\n삭제된 리스트: ${data.deleted_count}개`;
+                if (data.merged_stocks > 0) {
+                    message += `\n병합된 종목: ${data.merged_stocks}개`;
+                }
+                alert(message);
+                location.reload();
+            } else {
+                alert('정리 중 오류가 발생했습니다: ' + data.error);
+            }
+        })
+        .catch(error => {
+            alert('요청 중 오류가 발생했습니다: ' + error);
+        });
+    }
+}
+
+function deleteAllDefaultLists() {
+    if (confirm('{{ user.username }}의 모든 기본 리스트를 삭제하시겠습니까?\n\n⚠️ 이 작업은 되돌릴 수 없습니다!\n사용자가 최소 1개의 리스트는 보유하도록 보장됩니다.')) {
+        fetch('{{ url_for("admin.admin_delete_all_default_lists", user_id=user.id) }}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert(`기본 리스트 삭제가 완료되었습니다.\n삭제된 리스트: ${data.deleted_count}개`);
+                location.reload();
+            } else {
+                alert('삭제 중 오류가 발생했습니다: ' + data.error);
+            }
+        })
+        .catch(error => {
+            alert('요청 중 오류가 발생했습니다: ' + error);
+        });
+    }
+}
+</script>
+{% endblock %} 

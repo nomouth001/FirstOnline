@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+
+{% block title %}이메일 발송 히스토리{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h3>📊 이메일 발송 히스토리</h3>
+                    <a href="{{ url_for('newsletter.settings') }}" class="btn btn-outline-secondary">설정으로 돌아가기</a>
+                </div>
+                <div class="card-body">
+                    {% if email_logs %}
+                        <div class="table-responsive">
+                            <table class="table table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>발송일시</th>
+                                        <th>이메일 유형</th>
+                                        <th>제목</th>
+                                        <th>상태</th>
+                                        <th>오류 메시지</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for log in email_logs %}
+                                    <tr>
+                                        <td>{{ log.sent_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                                        <td>
+                                            {% if log.email_type == 'newsletter' %}
+                                                <span class="badge bg-primary">뉴스레터</span>
+                                            {% elif log.email_type == 'analysis' %}
+                                                <span class="badge bg-info">분석 알림</span>
+                                            {% elif log.email_type == 'notification' %}
+                                                <span class="badge bg-warning">일반 알림</span>
+                                            {% else %}
+                                                <span class="badge bg-secondary">{{ log.email_type }}</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>{{ log.subject }}</td>
+                                        <td>
+                                            {% if log.status == 'sent' %}
+                                                <span class="badge bg-success">발송 완료</span>
+                                            {% elif log.status == 'failed' %}
+                                                <span class="badge bg-danger">발송 실패</span>
+                                            {% elif log.status == 'pending' %}
+                                                <span class="badge bg-warning">대기 중</span>
+                                            {% else %}
+                                                <span class="badge bg-secondary">{{ log.status }}</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            {% if log.error_message %}
+                                                <small class="text-danger">{{ log.error_message }}</small>
+                                            {% else %}
+                                                <small class="text-muted">-</small>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% else %}
+                        <div class="text-center py-4">
+                            <p class="text-muted">발송된 이메일이 없습니다.</p>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

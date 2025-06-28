@@ -1,0 +1,260 @@
+{% extends "base.html" %}
+
+{% block title %}{{ stock_list.name }} - 종목 리스트{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <h2>📊 {{ stock_list.name }}</h2>
+        <a href="{{ url_for('user_stock.stock_lists') }}" class="btn btn-secondary">← 리스트 목록으로</a>
+    </div>
+    
+    {% if stock_list.description %}
+        <p style="color: #666; margin-bottom: 1rem;">{{ stock_list.description }}</p>
+    {% endif %}
+    
+    <div style="background: #f8f9fa; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+        <p><strong>종목 수:</strong> {{ stocks|length }}개</p>
+        <p><strong>생성일:</strong> {{ stock_list.created_at.strftime('%Y-%m-%d %H:%M') }}</p>
+        {% if stock_list.is_public %}
+            <p><strong>상태:</strong> <span style="background: #28a745; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.8rem;">공개</span></p>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <h3>📈 종목 목록 ({{ stocks|length }}개)</h3>
+        <div style="display: flex; gap: 0.5rem;">
+            <a href="{{ url_for('user_stock.add_stock', list_id=stock_list.id) }}" class="btn btn-success">➕ 종목 추가</a>
+            {% if stocks %}
+                <form method="POST" action="{{ url_for('user_stock.bulk_generate', list_id=stock_list.id) }}" style="display: inline;">
+                    <button type="submit" class="btn btn-primary" 
+                            onclick="return confirm('이 리스트의 모든 종목에 대해 일괄 생성을 시작하시겠습니까?')">
+                        🚀 일괄 생성
+                    </button>
+                </form>
+            {% endif %}
+        </div>
+    </div>
+    
+    {% if stocks %}
+        <div style="overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse; margin-top: 1rem;">
+                <thead>
+                    <tr style="background: #f8f9fa;">
+                        <th style="padding: 0.75rem; text-align: left; border-bottom: 2px solid #dee2e6;">종목 코드</th>
+                        <th style="padding: 0.75rem; text-align: left; border-bottom: 2px solid #dee2e6;">종목명</th>
+                        <th style="padding: 0.75rem; text-align: left; border-bottom: 2px solid #dee2e6;">추가일</th>
+                        <th style="padding: 0.75rem; text-align: center; border-bottom: 2px solid #dee2e6;">작업</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for stock in stocks %}
+                        <tr style="border-bottom: 1px solid #dee2e6;">
+                            <td style="padding: 0.75rem;">
+                                <strong>{{ stock.ticker }}</strong>
+                            </td>
+                            <td style="padding: 0.75rem;">
+                                {{ stock.name or stock.ticker }}
+                            </td>
+                            <td style="padding: 0.75rem; color: #666; font-size: 0.9rem;">
+                                {{ stock.created_at.strftime('%Y-%m-%d %H:%M') if stock.created_at else 'N/A' }}
+                            </td>
+                            <td style="padding: 0.75rem; text-align: center;">
+                                <div style="display: flex; gap: 0.5rem; justify-content: center;">
+                                    <button onclick="generateChart('{{ stock.ticker }}', event)" 
+                                            id="generate-chart-btn-{{ stock.ticker }}"
+                                            class="btn btn-info btn-sm">📊 차트 생성</button>
+                                    <button onclick="viewChartWithConfirmation('{{ stock.ticker }}')" 
+                                            id="view-chart-btn-{{ stock.ticker }}"
+                                            class="btn btn-primary btn-sm">📈 차트 보기</button>
+                                    <form method="POST" action="{{ url_for('user_stock.remove_stock', list_id=stock_list.id, stock_id=stock.id) }}" 
+                                          style="display: inline;">
+                                        <button type="submit" 
+                                                id="remove-stock-btn-{{ stock.ticker }}"
+                                                class="btn btn-danger btn-sm" 
+                                                onclick="return confirm('정말 종목 {{ stock.ticker }}를 삭제하시겠습니까?')">
+                                            삭제
+                                        </button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div style="text-align: center; padding: 2rem; color: #666;">
+            <p>아직 종목이 없습니다.</p>
+            <a href="{{ url_for('user_stock.add_stock', list_id=stock_list.id) }}" 
+               class="btn btn-success">첫 번째 종목 추가하기</a>
+        </div>
+    {% endif %}
+</div>
+
+<div class="card">
+    <h3>🔧 리스트 관리</h3>
+    <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+        <a href="{{ url_for('user_stock.edit_stock_list', list_id=stock_list.id) }}" 
+           class="btn btn-warning">✏️ 리스트 수정</a>
+        
+        {% if not stock_list.is_default %}
+            <form method="POST" action="{{ url_for('user_stock.delete_stock_list', list_id=stock_list.id) }}" 
+                  style="display: inline;">
+                <button type="submit" class="btn btn-danger" 
+                        onclick="return confirm('정말 이 리스트를 삭제하시겠습니까? 모든 종목이 함께 삭제됩니다.')">
+                    🗑️ 리스트 삭제
+                </button>
+            </form>
+        {% endif %}
+        
+        <a href="{{ url_for('user_stock.stock_lists') }}" class="btn btn-secondary">← 리스트 목록</a>
+        <a href="{{ url_for('user_stock.dashboard') }}" class="btn btn-primary">대시보드</a>
+    </div>
+</div>
+
+{% if stocks %}
+<div class="card">
+    <h3>📊 분석 결과</h3>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem;">
+        <div style="text-align: center; padding: 1rem; border: 1px solid #ddd; border-radius: 8px;">
+            <h4>📈 분석 요약</h4>
+            <p>전체 종목의 분석 결과를 한눈에 확인하세요.</p>
+            <a href="{{ url_for('summary_page') }}" class="btn btn-primary">보기</a>
+        </div>
+        
+        <div style="text-align: center; padding: 1rem; border: 1px solid #ddd; border-radius: 8px;">
+            <h4>📊 다중 요약</h4>
+            <p>여러 리스트의 분석 결과를 비교해보세요.</p>
+            <a href="{{ url_for('multi_summary_page') }}" class="btn btn-primary">보기</a>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+    // 인라인 메시지 표시 함수 (base.html에 정의되어 있다면 생략 가능)
+    function showInlineMessage(message, type) {
+        // 기존 메시지 제거
+        const existingMessage = document.getElementById('inline-message');
+        if (existingMessage) {
+            existingMessage.remove();
+        }
+        
+        // 새 메시지 생성
+        const messageDiv = document.createElement('div');
+        messageDiv.id = 'inline-message';
+        messageDiv.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 20px;
+            border-radius: 8px;
+            color: white;
+            font-weight: bold;
+            z-index: 1000;
+            max-width: 400px;
+            word-wrap: break-word;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            animation: slideIn 0.3s ease-out;
+        `;
+        
+        if (type === 'success') {
+            messageDiv.style.backgroundColor = '#28a745';
+        } else {
+            messageDiv.style.backgroundColor = '#dc3545';
+        }
+        
+        messageDiv.textContent = message;
+        
+        // CSS 애니메이션 추가
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes slideIn {
+                from {
+                    transform: translateX(100%);
+                    opacity: 0;
+                }
+                to {
+                    transform: translateX(0);
+                    opacity: 1;
+                }
+            }
+        `;
+        document.head.appendChild(style);
+        
+        document.body.appendChild(messageDiv);
+        
+        // 3초 후 자동 제거
+        setTimeout(() => {
+            if (messageDiv.parentNode) {
+                messageDiv.style.animation = 'slideOut 0.3s ease-in';
+                messageDiv.style.transform = 'translateX(100%)';
+                messageDiv.style.opacity = '0';
+                setTimeout(() => {
+                    if (messageDiv.parentNode) {
+                        messageDiv.remove();
+                    }
+                }, 300);
+            }
+        }, 3000);
+    }
+
+    async function generateChart(ticker, event) {
+        const button = event.target;
+        const originalText = button.textContent;
+        button.textContent = '생성 중...';
+        button.disabled = true;
+
+        try {
+            const res = await fetch(`/generate_chart/${ticker}`);
+            if (res.ok) {
+                const result = await res.json();
+                showInlineMessage(`✅ ${ticker} 차트 생성 완료! 이제 '차트 보기'를 클릭하여 확인할 수 있습니다.`, 'success');
+            } else {
+                const errorData = await res.json();
+                showInlineMessage(`❌ 차트 생성 실패: ${errorData.error || '알 수 없는 오류'}`, 'error');
+            }
+        } catch (error) {
+            showInlineMessage(`❌ 차트 생성 중 오류 발생: ${error.message}`, 'error');
+            console.error("Generate chart error:", error);
+        } finally {
+            button.textContent = originalText;
+            button.disabled = false;
+        }
+    }
+
+    function viewChartWithConfirmation(ticker) {
+        // 먼저 기존 분석이 있는지 확인
+        fetch(`/check_existing_analysis/${ticker}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.exists) {
+                    // 기존 분석이 있으면 사용자에게 확인
+                    const userChoice = confirm(`${data.message}\n\n"확인"을 누르면 새로 생성하고, "취소"를 누르면 기존 파일을 사용합니다.`);
+                    
+                    if (userChoice) {
+                        // 새로 생성
+                        window.open(`/force_new_analysis_with_timestamp/${ticker}`, '_blank');
+                    } else {
+                        // 기존 파일 사용
+                        window.open(`/view_existing_chart/${ticker}`, '_blank');
+                    }
+                } else {
+                    // 기존 분석이 없으면 바로 새로 생성
+                    window.open(`/force_new_analysis_with_timestamp/${ticker}`, '_blank');
+                }
+            })
+            .catch(error => {
+                console.error('Error checking existing analysis:', error);
+                // 오류 발생 시 기본적으로 새로 생성
+                window.open(`/force_new_analysis_with_timestamp/${ticker}`, '_blank');
+            });
+    }
+</script>
+{% endblock %} 

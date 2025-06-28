@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+
+{% block title %}사용자 관리{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h1>👥 사용자 관리</h1>
+    <p>시스템의 모든 사용자를 관리할 수 있습니다.</p>
+</div>
+
+<div class="card">
+    <h3>🔍 사용자 검색</h3>
+    <form method="GET" action="{{ url_for('admin.admin_users') }}" class="search-form">
+        <div style="display: flex; gap: 1rem; align-items: center;">
+            <input type="text" name="search" value="{{ search_query }}" 
+                   placeholder="사용자명, 이메일, 이름으로 검색..." 
+                   style="flex: 1; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px;">
+            <button type="submit" class="btn btn-primary">검색</button>
+            {% if search_query %}
+                <a href="{{ url_for('admin.admin_users') }}" class="btn btn-secondary">초기화</a>
+            {% endif %}
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <h3>사용자 목록</h3>
+    {% if search_query %}
+        <p style="color: #007bff; margin-bottom: 1rem;">
+            🔍 "{{ search_query }}" 검색 결과: {{ users|length }}명의 사용자
+        </p>
+    {% endif %}
+    
+    {% if users %}
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>사용자명</th>
+                    <th>이메일</th>
+                    <th>이름</th>
+                    <th>가입일</th>
+                    <th>상태</th>
+                    <th>권한</th>
+                    <th>리스트</th>
+                    <th>작업</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for user in users %}
+                <tr>
+                    <td>{{ user.id }}</td>
+                    <td>
+                        {{ user.username }}
+                        {% if user.id == current_user.id %}
+                            <span style="color: #007bff;">(현재 사용자)</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ user.email }}</td>
+                    <td>{{ user.get_full_name() }}</td>
+                    <td>{{ user.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                    <td>
+                        {% if user.is_active %}
+                            <span style="color: #28a745;">활성</span>
+                        {% elif user.is_withdrawn %}
+                            <span style="color: #dc3545;">탈퇴</span>
+                        {% else %}
+                            <span style="color: #dc3545;">비활성</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if user.is_administrator() %}
+                            <span class="admin-badge">관리자</span>
+                        {% else %}
+                            <span style="color: #6c757d;">일반 사용자</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <a href="{{ url_for('admin.user_stock_lists', user_id=user.id) }}" 
+                           class="btn btn-info btn-sm">
+                            📊 리스트 관리 ({{ user.stock_lists|length }})
+                        </a>
+                    </td>
+                    <td>
+                        <div style="display: flex; gap: 0.5rem;">
+                            {% if user.id != current_user.id %}
+                                {% if not user.is_withdrawn %}
+                                    <form method="POST" action="{{ url_for('admin.toggle_admin', user_id=user.id) }}" style="display: inline;">
+                                        <button type="submit" class="btn btn-warning" style="font-size: 0.8rem;">
+                                            {% if user.is_administrator() %}
+                                                관리자 해제
+                                            {% else %}
+                                                관리자 지정
+                                            {% endif %}
+                                        </button>
+                                    </form>
+                                    
+                                    <form method="POST" action="{{ url_for('admin.toggle_active', user_id=user.id) }}" style="display: inline;">
+                                        <button type="submit" class="btn btn-{% if user.is_active %}danger{% else %}success{% endif %}" style="font-size: 0.8rem;">
+                                            {% if user.is_active %}
+                                                비활성화
+                                            {% else %}
+                                                활성화
+                                            {% endif %}
+                                        </button>
+                                    </form>
+                                    
+                                    {% if not user.is_administrator() %}
+                                        <button type="button" class="btn btn-danger" style="font-size: 0.8rem;" 
+                                                id="delete-btn-{{ user.id }}"
+                                                data-user-id="{{ user.id }}"
+                                                data-username="{{ user.username }}">
+                                            삭제
+                                        </button>
+                                    {% endif %}
+                                {% else %}
+                                    <span style="color: #6c757d; font-size: 0.8rem;">탈퇴 사용자</span>
+                                {% endif %}
+                            {% else %}
+                                <span style="color: #6c757d; font-size: 0.8rem;">자기 자신</span>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        {% if search_query %}
+            <p>검색 결과가 없습니다. 다른 검색어를 시도해보세요.</p>
+        {% else %}
+            <p>등록된 사용자가 없습니다.</p>
+        {% endif %}
+    {% endif %}
+</div>
+
+<div class="card">
+    <h3>📊 사용자 통계</h3>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+        <div style="text-align: center;">
+            <div style="font-size: 2rem; font-weight: bold; color: #007bff;">{{ users|length }}</div>
+            <p>전체 사용자</p>
+        </div>
+        <div style="text-align: center;">
+            <div style="font-size: 2rem; font-weight: bold; color: #28a745;">{{ users|selectattr('is_active')|list|length }}</div>
+            <p>활성 사용자</p>
+        </div>
+        <div style="text-align: center;">
+            <div style="font-size: 2rem; font-weight: bold; color: #dc3545;">{{ users|selectattr('is_administrator')|list|length }}</div>
+            <p>관리자</p>
+        </div>
+        <div style="text-align: center;">
+            <div style="font-size: 2rem; font-weight: bold; color: #ffc107;">{{ users|selectattr('is_verified')|list|length }}</div>
+            <p>인증된 사용자</p>
+        </div>
+        <div style="text-align: center;">
+            <div style="font-size: 2rem; font-weight: bold; color: #dc3545;">{{ users|selectattr('is_withdrawn')|list|length }}</div>
+            <p>탈퇴 사용자</p>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <a href="{{ url_for('admin.admin_dashboard') }}" class="btn btn-secondary">← 관리자 대시보드로 돌아가기</a>
+</div>
+
+<!-- 삭제 확인 모달 -->
+<div id="deleteModal" class="modal" style="display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5);">
+    <div class="modal-content" style="background-color: white; margin: 15% auto; padding: 20px; border-radius: 5px; width: 400px;">
+        <h3>⚠️ 계정 삭제 확인</h3>
+        <p id="deleteMessage">정말로 이 사용자의 계정을 삭제하시겠습니까?</p>
+        <p style="color: #dc3545; font-weight: bold;">⚠️ 이 작업은 되돌릴 수 없습니다!</p>
+        <div style="display: flex; gap: 1rem; justify-content: flex-end; margin-top: 20px;">
+            <button onclick="closeDeleteModal()" class="btn btn-secondary">취소</button>
+            <form id="deleteForm" method="POST" style="display: inline;">
+                <button type="submit" class="btn btn-danger">삭제</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- 외부 JavaScript 파일 참조 -->
+<script src="{{ url_for('static', filename='js/user_delete.js') }}"></script>
+{% endblock %} 

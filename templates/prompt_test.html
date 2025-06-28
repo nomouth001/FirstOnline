@@ -1,0 +1,674 @@
+{% extends "base.html" %}
+
+{% block title %}프롬프트 테스트 도구{% endblock %}
+
+{% block scripts %}
+<!-- Bootstrap CSS -->
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<!-- Font Awesome -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+<!-- Bootstrap JavaScript -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="row">
+        <div class="col-12">
+            <h2 class="mb-4">
+                <i class="fas fa-flask"></i> 주식 차트 분석 프롬프트 테스트 도구
+            </h2>
+        </div>
+    </div>
+
+    <!-- 단일 프롬프트 테스트 섹션 -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-vial"></i> 단일 프롬프트 테스트</h5>
+                </div>
+                <div class="card-body">
+                    <form id="singleTestForm">
+                        <div class="mb-3">
+                            <label for="singleTicker" class="form-label">종목 코드</label>
+                            <input type="text" class="form-control" id="singleTicker" placeholder="예: AAPL" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="singlePromptName" class="form-label">프롬프트 이름</label>
+                            <input type="text" class="form-control" id="singlePromptName" placeholder="예: 위험중심_프롬프트" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="singlePromptContent" class="form-label">프롬프트 내용</label>
+                            <textarea class="form-control" id="singlePromptContent" rows="8" placeholder="프롬프트 내용을 입력하세요..." required></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-play"></i> 테스트 실행
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-list"></i> 샘플 프롬프트</h5>
+                </div>
+                <div class="card-body">
+                    <div id="samplePromptsList">
+                        <div class="text-center">
+                            <div class="spinner-border" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 여러 프롬프트 비교 테스트 섹션 -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-balance-scale"></i> 여러 프롬프트 비교 테스트</h5>
+                </div>
+                <div class="card-body">
+                    <form id="multipleTestForm">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="multipleTicker" class="form-label">종목 코드</label>
+                                    <input type="text" class="form-control" id="multipleTicker" placeholder="예: AAPL" required>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">비교할 프롬프트 선택</label>
+                                    <div id="promptCheckboxes">
+                                        <!-- 체크박스들이 동적으로 추가됩니다 -->
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-success">
+                            <i class="fas fa-play"></i> 비교 테스트 실행
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 테스트 결과 섹션 -->
+    <div class="row mb-4" id="testResultsSection" style="display: none;">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-chart-bar"></i> 테스트 결과</h5>
+                </div>
+                <div class="card-body">
+                    <div id="testResults"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 테스트 기록 섹션 -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-history"></i> 테스트 기록</h5>
+                </div>
+                <div class="card-body">
+                    <div id="testHistory">
+                        <div class="text-center">
+                            <div class="spinner-border" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 결과 상세보기 모달 -->
+<div class="modal fade" id="resultModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">테스트 결과 상세보기</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="resultModalBody">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">닫기</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// 전역 변수
+let samplePrompts = {};
+
+// 페이지 로드 시 초기화
+document.addEventListener('DOMContentLoaded', function() {
+    loadSamplePrompts();
+    loadTestHistory();
+});
+
+// 샘플 프롬프트 로드
+async function loadSamplePrompts() {
+    try {
+        const response = await fetch('/prompt-test/get-sample-prompts');
+        const data = await response.json();
+        
+        if (data.success) {
+            samplePrompts = data.prompts;
+            displaySamplePrompts();
+            displayPromptCheckboxes();
+        } else {
+            console.error('샘플 프롬프트 로드 실패:', data.message);
+        }
+    } catch (error) {
+        console.error('샘플 프롬프트 로드 오류:', error);
+    }
+}
+
+// 샘플 프롬프트 표시
+function displaySamplePrompts() {
+    const container = document.getElementById('samplePromptsList');
+    container.innerHTML = '';
+    
+    Object.entries(samplePrompts).forEach(([name, info]) => {
+        const div = document.createElement('div');
+        div.className = 'mb-3 p-3 border rounded';
+        div.innerHTML = `
+            <h6 class="mb-2">${name}</h6>
+            <p class="mb-2 text-muted small">${info.summary}</p>
+            <button class="btn btn-sm btn-outline-primary" onclick="loadPromptContent('${name}')">
+                <i class="fas fa-copy"></i> 내용 복사
+            </button>
+        `;
+        container.appendChild(div);
+    });
+}
+
+// 프롬프트 체크박스 표시
+function displayPromptCheckboxes() {
+    const container = document.getElementById('promptCheckboxes');
+    container.innerHTML = '';
+    
+    Object.keys(samplePrompts).forEach(name => {
+        const div = document.createElement('div');
+        div.className = 'form-check';
+        div.innerHTML = `
+            <input class="form-check-input" type="checkbox" value="${name}" id="check_${name}">
+            <label class="form-check-label" for="check_${name}">
+                ${name}
+            </label>
+        `;
+        container.appendChild(div);
+    });
+}
+
+// 프롬프트 내용 복사
+function loadPromptContent(promptName) {
+    if (samplePrompts[promptName]) {
+        document.getElementById('singlePromptName').value = promptName;
+        document.getElementById('singlePromptContent').value = samplePrompts[promptName].full_content;
+    }
+}
+
+// 인라인 메시지 표시 함수
+function showInlineMessage(message, type) {
+  // 기존 메시지 제거
+  const existingMessage = document.getElementById('inline-message');
+  if (existingMessage) {
+    existingMessage.remove();
+  }
+  // 새 메시지 생성
+  const messageDiv = document.createElement('div');
+  messageDiv.id = 'inline-message';
+  messageDiv.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 15px 20px;
+    border-radius: 8px;
+    color: white;
+    font-weight: bold;
+    z-index: 1000;
+    max-width: 400px;
+    word-wrap: break-word;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    animation: slideIn 0.3s ease-out;
+  `;
+  if (type === 'success') {
+    messageDiv.style.backgroundColor = '#28a745';
+  } else {
+    messageDiv.style.backgroundColor = '#dc3545';
+  }
+  messageDiv.textContent = message;
+  // CSS 애니메이션 추가
+  const style = document.createElement('style');
+  style.textContent = `
+    @keyframes slideIn {
+      from {
+        transform: translateX(100%);
+        opacity: 0;
+      }
+      to {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    }
+  `;
+  document.head.appendChild(style);
+  document.body.appendChild(messageDiv);
+  // 3초 후 자동 제거
+  setTimeout(() => {
+    if (messageDiv.parentNode) {
+      messageDiv.style.animation = 'slideOut 0.3s ease-in';
+      messageDiv.style.transform = 'translateX(100%)';
+      messageDiv.style.opacity = '0';
+      setTimeout(() => {
+        if (messageDiv.parentNode) {
+          messageDiv.remove();
+        }
+      }, 300);
+    }
+  }, 3000);
+}
+
+// 단일 프롬프트 테스트
+document.getElementById('singleTestForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const ticker = document.getElementById('singleTicker').value;
+    const promptName = document.getElementById('singlePromptName').value;
+    const promptContent = document.getElementById('singlePromptContent').value;
+    
+    const submitBtn = this.querySelector('button[type="submit"]');
+    const originalText = submitBtn.innerHTML;
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 테스트 중...';
+    
+    try {
+        const response = await fetch('/prompt-test/test-single', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                ticker: ticker,
+                prompt_name: promptName,
+                prompt_content: promptContent
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            displaySingleTestResult(data.result);
+            loadTestHistory(); // 기록 새로고침
+        } else {
+            showInlineMessage('테스트 실패: ' + data.message, 'error');
+        }
+    } catch (error) {
+        showInlineMessage('테스트 중 오류가 발생했습니다.', 'error');
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalText;
+    }
+});
+
+// 여러 프롬프트 비교 테스트
+document.getElementById('multipleTestForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const ticker = document.getElementById('multipleTicker').value;
+    const selectedPrompts = Array.from(document.querySelectorAll('#promptCheckboxes input:checked'))
+        .map(cb => cb.value);
+    
+    if (selectedPrompts.length === 0) {
+        showInlineMessage('비교할 프롬프트를 선택해주세요.', 'error');
+        return;
+    }
+    
+    const submitBtn = this.querySelector('button[type="submit"]');
+    const originalText = submitBtn.innerHTML;
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 비교 테스트 중...';
+    
+    try {
+        const response = await fetch('/prompt-test/test-multiple', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                ticker: ticker,
+                selected_prompts: selectedPrompts
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            displayMultipleTestResults(data.results);
+            loadTestHistory(); // 기록 새로고침
+        } else {
+            showInlineMessage('비교 테스트 실패: ' + data.message, 'error');
+        }
+    } catch (error) {
+        showInlineMessage('비교 테스트 중 오류가 발생했습니다.', 'error');
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalText;
+    }
+});
+
+// 단일 테스트 결과 표시
+function displaySingleTestResult(result) {
+    const section = document.getElementById('testResultsSection');
+    const container = document.getElementById('testResults');
+    
+    container.innerHTML = `
+        <div class="alert alert-${result.success ? 'success' : 'danger'}">
+            <h6>테스트 결과</h6>
+            <p><strong>성공:</strong> ${result.success ? '예' : '아니오'}</p>
+            <p><strong>요약:</strong> ${result.summary}</p>
+            ${result.html_file ? `<p><strong>HTML 파일:</strong> ${result.html_file}</p>` : ''}
+            ${result.json_file ? `<p><strong>JSON 파일:</strong> ${result.json_file}</p>` : ''}
+        </div>
+    `;
+    
+    section.style.display = 'block';
+}
+
+// 여러 테스트 결과 표시
+function displayMultipleTestResults(results) {
+    const section = document.getElementById('testResultsSection');
+    const container = document.getElementById('testResults');
+    
+    let html = '<h6>비교 테스트 결과</h6>';
+    
+    Object.entries(results).forEach(([promptName, result]) => {
+        html += `
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h6 class="mb-0">${promptName}</h6>
+                </div>
+                <div class="card-body">
+                    <p><strong>성공:</strong> ${result.success ? '예' : '아니오'}</p>
+                    <p><strong>요약:</strong> ${result.summary}</p>
+                    ${result.html_file ? `<p><strong>HTML 파일:</strong> ${result.html_file}</p>` : ''}
+                    ${result.json_file ? `<p><strong>JSON 파일:</strong> ${result.json_file}</p>` : ''}
+                </div>
+            </div>
+        `;
+    });
+    
+    container.innerHTML = html;
+    section.style.display = 'block';
+}
+
+// 테스트 기록 로드
+async function loadTestHistory() {
+    try {
+        const response = await fetch('/prompt-test/get-test-results');
+        const data = await response.json();
+        
+        if (data.success) {
+            displayTestHistory(data.files);
+        } else {
+            console.error('테스트 기록 로드 실패:', data.message);
+        }
+    } catch (error) {
+        console.error('테스트 기록 로드 오류:', error);
+    }
+}
+
+// 테스트 기록 표시
+function displayTestHistory(files) {
+    const container = document.getElementById('testHistory');
+    
+    if (files.length === 0) {
+        container.innerHTML = '<p class="text-muted">테스트 기록이 없습니다.</p>';
+        return;
+    }
+    
+    let html = '<div class="list-group">';
+    
+    files.forEach(file => {
+        const fileSize = (file.size / 1024).toFixed(1);
+        const modifiedDate = new Date(file.modified).toLocaleString();
+        
+        html += `
+            <div class="list-group-item d-flex justify-content-between align-items-center">
+                <div>
+                    <h6 class="mb-1">${file.name}</h6>
+                    <small class="text-muted">수정: ${modifiedDate} | 크기: ${fileSize} KB</small>
+                </div>
+                <button class="btn btn-sm btn-outline-primary" onclick="viewTestResult('${file.name}')">
+                    <i class="fas fa-eye"></i> 보기
+                </button>
+            </div>
+        `;
+    });
+    
+    html += '</div>';
+    container.innerHTML = html;
+}
+
+// 테스트 결과 상세보기
+async function viewTestResult(filename) {
+    try {
+        const response = await fetch(`/prompt-test/view-result/${filename}`);
+        const data = await response.json();
+        
+        if (data.success) {
+            const result = data.result;
+            const modalBody = document.getElementById('resultModalBody');
+            
+            // 안전한 데이터 접근을 위한 함수
+            const safeGet = (obj, key, defaultValue = '정보 없음') => {
+                return obj && obj[key] !== undefined && obj[key] !== null ? obj[key] : defaultValue;
+            };
+            
+            // 테스트 시간 포맷팅
+            const testTime = safeGet(result, 'test_time');
+            const formattedTime = testTime !== '정보 없음' ? new Date(testTime).toLocaleString() : testTime;
+            
+            modalBody.innerHTML = `
+                <div class="mb-3">
+                    <h6>테스트 정보</h6>
+                    <p><strong>파일명:</strong> ${filename}</p>
+                    <p><strong>종목:</strong> ${safeGet(result, 'ticker')}</p>
+                    <p><strong>프롬프트:</strong> ${safeGet(result, 'prompt_name')}</p>
+                    <p><strong>테스트 시간:</strong> ${formattedTime}</p>
+                    <p><strong>성공:</strong> ${safeGet(result, 'success') ? '예' : '아니오'}</p>
+                    <p><strong>상태 코드:</strong> ${safeGet(result, 'status_code')}</p>
+                </div>
+                <div class="mb-3">
+                    <h6>AI 분석 요약</h6>
+                    <div class="alert alert-info">
+                        ${safeGet(result, 'summary_gemini', '요약 없음')}
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <h6>전체 분석 내용</h6>
+                    <pre class="bg-light p-3" style="max-height: 400px; overflow-y: auto;">${safeGet(result, 'analysis_gemini', '분석 내용 없음')}</pre>
+                </div>
+                ${safeGet(result, 'html_file') !== '정보 없음' ? `
+                <div class="mb-3">
+                    <h6>HTML 파일</h6>
+                    <p>${safeGet(result, 'html_file')}</p>
+                </div>
+                ` : ''}
+            `;
+            
+            // Bootstrap 모달 생성 및 표시 (안전한 방법)
+            const modalElement = document.getElementById('resultModal');
+            if (typeof bootstrap !== 'undefined') {
+                const modal = new bootstrap.Modal(modalElement);
+                modal.show();
+            } else {
+                // Bootstrap이 로드되지 않은 경우 대체 방법
+                modalElement.style.display = 'block';
+                modalElement.classList.add('show');
+                modalElement.setAttribute('aria-hidden', 'false');
+                document.body.classList.add('modal-open');
+                
+                // 닫기 버튼 이벤트 추가
+                const closeButtons = modalElement.querySelectorAll('[data-bs-dismiss="modal"], .btn-close');
+                closeButtons.forEach(button => {
+                    button.onclick = function() {
+                        modalElement.style.display = 'none';
+                        modalElement.classList.remove('show');
+                        modalElement.setAttribute('aria-hidden', 'true');
+                        document.body.classList.remove('modal-open');
+                    };
+                });
+            }
+        } else {
+            showInlineMessage('결과 조회 실패: ' + (data.message || '알 수 없는 오류'), 'error');
+        }
+    } catch (error) {
+        console.error('테스트 결과 조회 오류:', error);
+        showInlineMessage('결과 조회 중 오류가 발생했습니다: ' + error.message, 'error');
+    }
+}
+</script>
+
+<style>
+.form-check {
+    margin-bottom: 0.5rem;
+}
+
+.card {
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+}
+
+.list-group-item {
+    border-left: none;
+    border-right: none;
+}
+
+pre {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+/* 모달 스타일 (Bootstrap이 없을 때를 위한 대체) */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 1055;
+    width: 100%;
+    height: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+    outline: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+}
+
+.modal.show {
+    display: block !important;
+}
+
+.modal-dialog {
+    position: relative;
+    width: auto;
+    margin: 0.5rem;
+    pointer-events: none;
+}
+
+.modal-xl {
+    max-width: 1140px;
+}
+
+.modal-content {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    pointer-events: auto;
+    background-color: #fff;
+    background-clip: padding-box;
+    border: 1px solid rgba(0, 0, 0, 0.2);
+    border-radius: 0.3rem;
+    outline: 0;
+}
+
+.modal-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding: 1rem 1rem;
+    border-bottom: 1px solid #dee2e6;
+    border-top-left-radius: calc(0.3rem - 1px);
+    border-top-right-radius: calc(0.3rem - 1px);
+}
+
+.modal-title {
+    margin-bottom: 0;
+    line-height: 1.5;
+}
+
+.modal-body {
+    position: relative;
+    flex: 1 1 auto;
+    padding: 1rem;
+}
+
+.modal-footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 0.75rem;
+    border-top: 1px solid #dee2e6;
+    border-bottom-right-radius: calc(0.3rem - 1px);
+    border-bottom-left-radius: calc(0.3rem - 1px);
+}
+
+.btn-close {
+    box-sizing: content-box;
+    width: 1em;
+    height: 1em;
+    padding: 0.25em 0.25em;
+    color: #000;
+    background: transparent url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%23000'%3e%3cpath d='m.235 1.027 4.766 4.766L9.668.327a.5.5 0 0 1 .708.708L5.709 5.702l4.766 4.766a.5.5 0 0 1-.708.708L5.001 6.409.235 11.175a.5.5 0 0 1-.708-.708L4.293 5.7-.473 1.035a.5.5 0 0 1 .708-.708z'/%3e%3c/svg%3e") center/1em auto no-repeat;
+    border: 0;
+    border-radius: 0.25rem;
+    opacity: 0.5;
+    cursor: pointer;
+}
+
+.btn-close:hover {
+    opacity: 0.75;
+}
+
+@media (min-width: 576px) {
+    .modal-dialog {
+        max-width: 500px;
+        margin: 1.75rem auto;
+    }
+}
+
+@media (min-width: 992px) {
+    .modal-xl {
+        max-width: 1140px;
+    }
+}
+</style>
+{% endblock %} 

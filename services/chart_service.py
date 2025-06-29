@@ -348,23 +348,38 @@ def generate(df_input, freq_label, suffix, ticker):
         if handles:
             ax.legend(handles, labels, loc="upper left", fontsize="small")
 
-    # 날짜별 폴더 구조 사용
-    date_folder = get_date_folder_path(CHART_DIR, current_date_str)
-    path = os.path.join(date_folder, f"{ticker}_{suffix}_{current_date_str}.png")
-    fig.savefig(path, bbox_inches="tight")
-    plt.close('all')
-    
-    # 디버그 파일 생성
-    debug_date_folder = get_date_folder_path(DEBUG_DIR, current_date_str)
-    
-    # EMA 디버그 파일
-    if freq_label == "Daily":
-        ema_debug_lines = []
-        ema_debug_lines.append(f"[EMA DEBUG] Ticker: {ticker} (Chart Generation)\n")
-        ema_debug_lines.append("[Daily EMA for Chart]")
-        ema_debug_lines.extend(daily_ema_data)
-        ema_debug_path = os.path.join(debug_date_folder, f"{ticker}_ema_chart_debug_{current_date_str}.txt")
-        with open(ema_debug_path, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(ema_debug_lines))
-    
-    return path 
+    # S3 업로드로 변경
+    try:
+        from services.s3_service import get_s3_service
+        s3_service = get_s3_service()
+        
+        if s3_service:
+            # S3에 차트 업로드
+            chart_url = s3_service.upload_chart(fig, ticker, suffix)
+            plt.close('all')
+            
+            # 디버그 정보도 S3에 저장 (선택사항)
+            if freq_label == "Daily" and chart_url:
+                debug_content = f"[EMA DEBUG] Ticker: {ticker} (Chart Generation)\n"
+                debug_content += "[Daily EMA for Chart]\n"
+                debug_content += '\n'.join(daily_ema_data)
+                s3_service.upload_analysis(debug_content, f"{ticker}_ema_debug")
+            
+            return chart_url
+        else:
+            # S3 서비스 실패 시 fallback - 로컬 저장
+            logging.warning("S3 서비스를 사용할 수 없습니다. 로컬 저장으로 fallback합니다.")
+            date_folder = get_date_folder_path(CHART_DIR, current_date_str)
+            path = os.path.join(date_folder, f"{ticker}_{suffix}_{current_date_str}.png")
+            fig.savefig(path, bbox_inches="tight")
+            plt.close('all')
+            return path
+            
+    except Exception as e:
+        logging.error(f"S3 업로드 실패, 로컬 저장으로 fallback: {e}")
+        # 로컬 저장 fallback
+        date_folder = get_date_folder_path(CHART_DIR, current_date_str)
+        path = os.path.join(date_folder, f"{ticker}_{suffix}_{current_date_str}.png")
+        fig.savefig(path, bbox_inches="tight")
+        plt.close('all')
+        return path 

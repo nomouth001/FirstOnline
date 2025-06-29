@@ -749,10 +749,21 @@ def analyze_ticker_internal_logic(ticker, analysis_html_path):
         summary_gemini = _extract_summary_from_analysis(analysis_gemini)
         logging.info(f"[{ticker}] Summary extracted successfully")
 
-    # HTML 파일 저장
-    logging.info(f"[{ticker}] Saving HTML analysis file...")
+    # 분석 결과를 S3에 저장
+    logging.info(f"[{ticker}] Saving analysis to S3...")
     try:
-        # AI 분석 성공 여부와 관계없이 HTML 파일 생성
+        from services.s3_service import get_s3_service
+        s3_service = get_s3_service()
+        
+        if s3_service and gemini_succeeded:
+            # S3에 분석 텍스트 저장
+            analysis_url = s3_service.upload_analysis(analysis_gemini, ticker)
+            if analysis_url:
+                logging.info(f"[{ticker}] Analysis saved to S3: {analysis_url}")
+            else:
+                logging.warning(f"[{ticker}] Failed to save analysis to S3")
+        
+        # HTML 파일은 여전히 로컬에 저장 (템플릿 렌더링 용)
         if current_app:
             # 이미 애플리케이션 컨텍스트 내에 있는 경우
             rendered_html = render_template("charts.html", ticker=ticker, charts=charts, date=display_date, analysis_gemini=analysis_gemini)
@@ -767,9 +778,10 @@ def analyze_ticker_internal_logic(ticker, analysis_html_path):
                 with open(analysis_html_path, 'w', encoding='utf-8') as f:
                     f.write(rendered_html)
                 logging.info(f"[{ticker}] HTML analysis file saved successfully with app_context")
+                
     except Exception as e:
-        logging.error(f"[{ticker}] Failed to save HTML analysis file: {e}")
-        # HTML 저장 실패해도 계속 진행
+        logging.error(f"[{ticker}] Failed to save analysis (S3/HTML): {e}")
+        # 저장 실패해도 계속 진행
     
     # JSON 응답 반환
     logging.info(f"[{ticker}] AI analysis process completed successfully")

@@ -1,14 +1,40 @@
-2025-06-28 14:54:13,427 INFO [app.py:40] 애플리케이션 시작 - 로깅 설정 완료
-2025-06-28 14:54:13,443 INFO [app.py:67] Flask 앱 설정 완료
-2025-06-28 14:54:14,685 DEBUG [__init__.py:342] matplotlib data path: C:\Users\LTH_Laptop\AppData\Local\Programs\Python\Python313\Lib\site-packages\matplotlib\mpl-data
-2025-06-28 14:54:14,691 DEBUG [__init__.py:342] CONFIGDIR=C:\Users\LTH_Laptop\.matplotlib
-2025-06-28 14:54:14,692 DEBUG [__init__.py:1557] interactive is False
-2025-06-28 14:54:14,692 DEBUG [__init__.py:1558] platform is win32
-2025-06-28 14:54:14,727 DEBUG [__init__.py:342] CACHEDIR=C:\Users\LTH_Laptop\.matplotlib
-2025-06-28 14:54:14,730 DEBUG [font_manager.py:1635] Using fontManager instance from C:\Users\LTH_Laptop\.matplotlib\fontlist-v390.json
-2025-06-28 14:54:15,038 INFO [chart_service.py:25] matplotlib 폰트 최적화 완료
-2025-06-28 14:54:15,754 INFO [email_service.py:45] 이메일 서비스 초기화: SendGrid 모드
-2025-06-28 14:54:15,754 WARNING [email_service.py:51] SendGrid API 키가 설정되지 않았습니다.
-2025-06-28 14:54:15,821 INFO [app.py:89] Blueprint 등록 완료
-2025-06-28 14:54:15,916 INFO [app.py:95] 데이터베이스 테이블 생성 완료
-2025-06-28 14:54:16,077 INFO [app.py:112] 기본 관리자 계정 생성 완료
+2025-06-30 19:37:53,895 INFO [app.py:40] 애플리케이션 시작 - 로깅 설정 완료
+2025-06-30 19:37:53,918 INFO [app.py:67] Flask 앱 설정 완료
+2025-06-30 19:37:55,259 DEBUG [__init__.py:342] matplotlib data path: C:\Users\LTH_Laptop\AppData\Local\Programs\Python\Python313\Lib\site-packages\matplotlib\mpl-data
+2025-06-30 19:37:55,268 DEBUG [__init__.py:342] CONFIGDIR=C:\Users\LTH_Laptop\.matplotlib
+2025-06-30 19:37:55,270 DEBUG [__init__.py:1557] interactive is False
+2025-06-30 19:37:55,270 DEBUG [__init__.py:1558] platform is win32
+2025-06-30 19:37:55,311 DEBUG [__init__.py:342] CACHEDIR=C:\Users\LTH_Laptop\.matplotlib
+2025-06-30 19:37:55,314 DEBUG [font_manager.py:1635] Using fontManager instance from C:\Users\LTH_Laptop\.matplotlib\fontlist-v390.json
+2025-06-30 19:37:55,629 INFO [chart_service.py:25] matplotlib 폰트 최적화 완료
+2025-06-30 19:37:56,444 INFO [email_service.py:45] 이메일 서비스 초기화: SendGrid 모드
+2025-06-30 19:37:56,444 WARNING [email_service.py:51] SendGrid API 키가 설정되지 않았습니다.
+2025-06-30 19:37:56,502 INFO [app.py:89] Blueprint 등록 완료
+2025-06-30 19:37:56,506 INFO [app.py:95] 데이터베이스 테이블 생성 완료
+2025-06-30 19:37:56,524 INFO [app.py:114] 기본 관리자 계정이 이미 존재합니다
+2025-06-30 19:37:56,526 INFO [app.py:229] Flask 서버 시작
+2025-06-30 19:37:57,832 INFO [_internal.py:97] [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.86.21:5000
+2025-06-30 19:37:57,834 INFO [_internal.py:97] [33mPress CTRL+C to quit[0m
+2025-06-30 19:38:02,326 INFO [_internal.py:97] 127.0.0.1 - - [30/Jun/2025 19:38:02] "GET /auth/login HTTP/1.1" 200 -
+2025-06-30 19:38:12,713 INFO [auth_routes.py:29] 사용자 로그인: admin
+2025-06-30 19:38:12,714 INFO [_internal.py:97] 127.0.0.1 - - [30/Jun/2025 19:38:12] "[32mPOST /auth/login HTTP/1.1[0m" 302 -
+2025-06-30 19:38:12,728 INFO [app.py:173] 메인 페이지 접근
+2025-06-30 19:38:12,740 INFO [_internal.py:97] 127.0.0.1 - - [30/Jun/2025 19:38:12] "GET / HTTP/1.1" 200 -
+2025-06-30 19:38:13,151 INFO [_internal.py:97] 127.0.0.1 - - [30/Jun/2025 19:38:13] "GET /get_stock_lists HTTP/1.1" 200 -
+2025-06-30 19:38:13,156 INFO [progress_service.py:93] Progress check requested. Current status: {'is_running': False, 'type': None, 'current_ticker': None, 'current_list': None, 'total_tickers': 0, 'processed_tickers': 0, 'start_time': None, 'estimated_completion': None, 'stop_requested': False}
+2025-06-30 19:38:13,157 INFO [_internal.py:97] 127.0.0.1 - - [30/Jun/2025 19:38:13] "GET /get_current_progress HTTP/1.1" 200 -
+2025-06-30 19:38:13,421 INFO [_internal.py:97] 127.0.0.1 - - [30/Jun/2025 19:38:13] "GET /get_current_stock_list HTTP/1.1" 200 -
+2025-06-30 19:38:13,464 INFO [_internal.py:97] 127.0.0.1 - - [30/Jun/2025 19:38:13] "GET /get_tickers HTTP/1.1" 200 -
+2025-06-30 19:38:17,148 INFO [user_stock_routes.py:33] [DEBUG] stock_lists() 호출됨
+2025-06-30 19:38:17,148 INFO [user_stock_routes.py:34] [DEBUG] current_user.id: 1
+2025-06-30 19:38:17,149 INFO [user_stock_routes.py:35] [DEBUG] current_user.username: admin
+2025-06-30 19:38:17,149 INFO [user_stock_routes.py:41] [DEBUG] DATABASE_URL: NOT SET
+2025-06-30 19:38:17,149 INFO [user_stock_routes.py:42] [DEBUG] SQLALCHEMY_DATABASE_URI: sqlite:///C:\_PythonWorkspace\_NewsLetter_WorkingFolder\newsletter_deploy\instance\app.db
+2025-06-30 19:38:17,150 INFO [user_stock_routes.py:43] [DEBUG] 현재 작업 디렉토리: C:\_PythonWorkspace\_NewsLetter_WorkingFolder\newsletter_deploy
+2025-06-30 19:38:17,152 INFO [user_stock_routes.py:48] [DEBUG] 조회된 stock_lists 개수: 10
+2025-06-30 19:38:17,158 INFO [user_stock_routes.py:52] [DEBUG] 전체 StockList 개수: 10
+2025-06-30 19:38:17,163 INFO [user_stock_routes.py:57] [DEBUG] 전체 User 개수: 1
+2025-06-30 19:38:17,188 INFO [_internal.py:97] 127.0.0.1 - - [30/Jun/2025 19:38:17] "GET /user/stock-lists HTTP/1.1" 200 -

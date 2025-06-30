@@ -15,14 +15,47 @@ logger = logging.getLogger(__name__)
 @login_required
 def dashboard():
     """사용자 대시보드"""
+    # 디버그 로그 추가
+    logger.info(f"[DEBUG] dashboard() 호출됨")
+    logger.info(f"[DEBUG] current_user.id: {current_user.id}")
+    logger.info(f"[DEBUG] current_user.username: {current_user.username}")
+    
     stock_lists = StockList.query.filter_by(user_id=current_user.id).all()
+    logger.info(f"[DEBUG] dashboard에서 조회된 stock_lists 개수: {len(stock_lists)}")
+    
     return render_template('user/dashboard.html', stock_lists=stock_lists)
 
 @user_stock_bp.route('/stock-lists')
 @login_required
 def stock_lists():
     """사용자의 종목 리스트 목록"""
+    # 디버그 로그 추가
+    logger.info(f"[DEBUG] stock_lists() 호출됨")
+    logger.info(f"[DEBUG] current_user.id: {current_user.id}")
+    logger.info(f"[DEBUG] current_user.username: {current_user.username}")
+    
+    # 데이터베이스 연결 상태 확인
+    try:
+        from config import SQLALCHEMY_DATABASE_URI
+        import os
+        logger.info(f"[DEBUG] DATABASE_URL: {os.environ.get('DATABASE_URL', 'NOT SET')}")
+        logger.info(f"[DEBUG] SQLALCHEMY_DATABASE_URI: {SQLALCHEMY_DATABASE_URI}")
+        logger.info(f"[DEBUG] 현재 작업 디렉토리: {os.getcwd()}")
+    except Exception as e:
+        logger.error(f"[DEBUG] 환경변수 확인 오류: {e}")
+    
     stock_lists = StockList.query.filter_by(user_id=current_user.id).all()
+    logger.info(f"[DEBUG] 조회된 stock_lists 개수: {len(stock_lists)}")
+    
+    # 전체 StockList 개수도 확인
+    total_stock_lists = StockList.query.count()
+    logger.info(f"[DEBUG] 전체 StockList 개수: {total_stock_lists}")
+    
+    # 전체 사용자 수도 확인
+    from models import User
+    total_users = User.query.count()
+    logger.info(f"[DEBUG] 전체 User 개수: {total_users}")
+    
     return render_template('user/stock_lists.html', stock_lists=stock_lists)
 
 @user_stock_bp.route('/stock-lists/create', methods=['GET', 'POST'])

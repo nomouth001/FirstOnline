@@ -1,0 +1,904 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+    <h1>⚙️ 관리자 대시보드</h1>
+    <p>시스템 관리 및 고급 기능을 사용할 수 있습니다.</p>
+</div>
+
+<h2>관심 종목 등록</h2>
+<form id="ticker-form">
+  <label for="ticker">종목 코드:</label>
+  <input type="text" id="ticker" required>
+  <button type="submit">조회</button>
+</form>
+
+<div id="lookup-result" style="margin-top: 15px;"></div>
+
+<h3 style="margin-top: 30px;">
+  📋 현재 활성 종목 리스트: <span id="current-list-name">Default</span>
+</h3>
+
+<div style="margin-bottom: 20px;">
+  <label for="stock-list-select">종목 리스트 선택:</label>
+  <select id="stock-list-select" onchange="selectStockList()">
+  </select>
+  <button onclick="document.getElementById('create-list-modal').style.display='block'">새 리스트 생성</button>
+  <button onclick="deleteStockList()">현재 리스트 삭제</button>
+</div>
+
+<div id="create-list-modal" style="display:none; border: 1px solid #ccc; padding: 20px; margin-top: 20px; background-color: white;">
+  <h4>새 종목 리스트 생성</h4>
+  <label for="new-list-name">리스트 이름:</label>
+  <input type="text" id="new-list-name" required>
+  <button onclick="createStockList()">생성</button>
+  <button onclick="document.getElementById('create-list-modal').style.display='none'">취소</button>
+</div>
+
+<!-- 일괄생성 및 요약 섹션 -->
+<div style="margin-top: 30px; margin-bottom: 20px; padding: 20px; background-color: #f8f9fa; border: 2px solid #007bff; border-radius: 10px;">
+  <h3 style="margin-top: 0; color: #007bff;">🚀 일괄 분석 및 요약</h3>
+  
+  <!-- 파일 관리 섹션 추가 -->
+  <div style="margin-bottom: 20px; padding: 15px; background-color: white; border-radius: 8px; border-left: 4px solid #ffc107;">
+    <h4 style="margin-top: 0; color: #856404;">📁 파일 관리</h4>
+    <div style="display: flex; gap: 15px; align-items: center; flex-wrap: wrap;">
+      <a href="/file-summary" target="_blank" style="padding: 12px 20px; background-color: #ffc107; color: #212529; text-decoration: none; border-radius: 5px; font-size: 16px; font-weight: bold;">
+        📊 파일 현황 보기
+      </a>
+      <button onclick="cleanupFiles()" style="padding: 12px 20px; background-color: #dc3545; color: white; border: none; border-radius: 5px; font-size: 16px; font-weight: bold; cursor: pointer;">
+        🧹 오래된 파일 정리
+      </button>
+    </div>
+  </div>
+
+  <!-- 프롬프트 테스트 섹션 추가 -->
+  <div style="margin-bottom: 20px; padding: 15px; background-color: white; border-radius: 8px; border-left: 4px solid #17a2b8;">
+    <h4 style="margin-top: 0; color: #0c5460;">🧪 프롬프트 테스트</h4>
+    <div style="display: flex; gap: 15px; align-items: center; flex-wrap: wrap;">
+      <a href="/prompt-test" target="_blank" style="padding: 12px 20px; background-color: #17a2b8; color: white; text-decoration: none; border-radius: 5px; font-size: 16px; font-weight: bold;">
+        🧪 AI 프롬프트 테스트 도구
+      </a>
+    </div>
+  </div>
+
+  <!-- 현재 리스트 일괄생성 -->
+  <div style="margin-bottom: 20px; padding: 15px; background-color: white; border-radius: 8px; border-left: 4px solid #28a745;">
+    <h4 style="margin-top: 0; color: #28a745;">📊 현재 리스트 일괄생성</h4>
+    <div style="display: flex; gap: 15px; align-items: center; flex-wrap: wrap;">
+      <button id="batch-generate-btn" onclick="generateAllChartsAndAnalysis()" style="padding: 12px 20px; background-color: #28a745; color: white; border: none; border-radius: 5px; font-size: 16px; font-weight: bold; cursor: pointer;">
+        📊 현재 리스트 전체 종목 일괄생성
+      </button>
+      <a href="/summary_page" target="_blank" style="padding: 12px 20px; background-color: #007bff; color: white; text-decoration: none; border-radius: 5px; font-size: 16px; font-weight: bold;">
+        📈 현재 리스트 분석 요약 보기
+      </a>
+    </div>
+    <div id="current-progress-text" style="margin-top: 10px; padding: 15px; background-color: #e3f2fd; border: 2px solid #2196f3; border-radius: 8px; display: none; font-size: 14px; color: #1976d2; font-weight: 500;">
+      <!-- 현재 리스트 진행상황이 여기에 표시됩니다 -->
+      <div style="margin-top: 10px;">
+        <button id="stop-single-btn" onclick="stopBatchProcessing()" style="padding: 8px 16px; background-color: #dc3545; color: white; border: none; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer; display: none;">
+          ⏹️ 일괄생성 중단
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 여러 리스트 일괄생성 -->
+  <div style="margin-bottom: 20px; padding: 15px; background-color: white; border-radius: 8px; border-left: 4px solid #dc3545;">
+    <h4 style="margin-top: 0; color: #dc3545;">🎯 여러 리스트 일괄생성</h4>
+    <div style="display: flex; gap: 15px; align-items: center; flex-wrap: wrap;">
+      <button id="multi-batch-generate-btn" onclick="showMultiListSelector()" style="padding: 12px 20px; background-color: #dc3545; color: white; border: none; border-radius: 5px; font-size: 16px; font-weight: bold; cursor: pointer;">
+        🎯 선택된 여러 리스트 일괄생성
+      </button>
+      <button id="multi-summary-btn" onclick="showMultiSummarySelector()" style="padding: 12px 20px; background-color: #6f42c1; color: white; border: none; border-radius: 5px; font-size: 16px; font-weight: bold; cursor: pointer;">
+        📊 선택된 여러 리스트 분석 요약 보기
+      </button>
+    </div>
+    <div id="multi-progress-text" style="margin-top: 10px; padding: 15px; background-color: #fce4ec; border: 2px solid #e91e63; border-radius: 8px; display: none; font-size: 14px; color: #c2185b; font-weight: 500;">
+      <!-- 여러 리스트 진행상황이 여기에 표시됩니다 -->
+      <div style="margin-top: 10px;">
+        <button id="stop-multi-btn" onclick="stopBatchProcessing()" style="padding: 8px 16px; background-color: #dc3545; color: white; border: none; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer; display: none;">
+          ⏹️ 일괄생성 중단
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 여러 리스트 선택 모달 -->
+<div id="multi-list-modal" style="display:none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); z-index: 1000;">
+  <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background-color: white; padding: 30px; border-radius: 10px; max-width: 500px; width: 90%; max-height: 80vh; overflow-y: auto;">
+    <h3 id="modal-title" style="margin-top: 0; color: #007bff;">리스트 선택</h3>
+    <div id="modal-description" style="margin-bottom: 20px; color: #6c757d;">
+      일괄생성할 리스트들을 선택하세요.
+    </div>
+    
+    <div id="lists-container" style="margin-bottom: 20px;">
+      <!-- 리스트 체크박스들이 여기에 동적으로 추가됩니다 -->
+    </div>
+    
+    <div style="display: flex; gap: 10px; justify-content: flex-end;">
+      <button onclick="closeMultiListModal()" style="padding: 10px 20px; background-color: #6c757d; color: white; border: none; border-radius: 5px; cursor: pointer;">취소</button>
+      <button id="modal-confirm-btn" onclick="confirmMultiListAction()" style="padding: 10px 20px; background-color: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer;">확인</button>
+    </div>
+  </div>
+</div>
+
+<h3>📋 종목 목록</h3>
+<table id="ticker-table" border="1">
+  <thead>
+    <tr>
+      <th><button onclick="sortTable(0)">티커 ⇅</button></th>
+      <th><button onclick="sortTable(1)">회사 ⇅</button></th>
+      <th>삭제</th>
+      <th>차트 생성</th>
+      <th>AI 분석 보기</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+
+<script>
+  let currentSortColumn = -1;
+  let currentSortDirection = "asc"; // "asc" for ascending, "desc" for descending
+
+  // 여러 리스트 관련 변수
+  let currentModalAction = null; // 'generate' 또는 'summary'
+  let allStockLists = []; // 모든 리스트 목록
+
+  let progressInterval = null;
+
+  // 실시간 진행상황 업데이트 함수
+  async function updateProgressDisplay() {
+    try {
+      console.log('진행상황 업데이트 시작...');
+      const response = await fetch('/get_current_progress');
+      const data = await response.json();
+      
+      console.log('진행상황 데이터:', data); // 디버깅용
+      
+      const progressText = document.getElementById('current-progress-text');
+      const multiProgressText = document.getElementById('multi-progress-text');
+      const stopSingleBtn = document.getElementById('stop-single-btn');
+      const stopMultiBtn = document.getElementById('stop-multi-btn');
+      
+      if (!progressText || !multiProgressText) {
+        console.error('진행상황 표시 요소를 찾을 수 없습니다.');
+        return;
+      }
+      
+      if (data.is_running) {
+        console.log('진행 중인 작업 발견:', data.type);
+        
+        let displayText = '';
+        if (data.type === 'single') {
+          displayText = `<strong>📊 현재 리스트 일괄생성 진행 중...</strong><br>`;
+          displayText += `• 현재 처리 중: <span style="color: #007bff; font-weight: bold;">${data.current_ticker || '준비 중'}</span><br>`;
+          displayText += `• 진행률: <span style="color: #28a745; font-weight: bold;">${data.processed_tickers}/${data.total_tickers} (${data.progress_percentage}%)</span><br>`;
+          if (data.elapsed_time) {
+            displayText += `• 경과 시간: <span style="color: #6c757d;">${data.elapsed_time}</span><br>`;
+          }
+          if (data.estimated_completion) {
+            displayText += `• 예상 완료: <span style="color: #dc3545;">${data.estimated_completion}</span>`;
+          }
+          
+          progressText.innerHTML = displayText + '<div style="margin-top: 10px;"><button id="stop-single-btn" onclick="stopBatchProcessing()" style="padding: 8px 16px; background-color: #dc3545; color: white; border: none; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer;">⏹️ 일괄생성 중단</button></div>';
+          progressText.style.display = 'block';
+          multiProgressText.style.display = 'none';
+          console.log('단일 리스트 진행상황 표시됨');
+        } else if (data.type === 'multiple') {
+          displayText = `<strong>🎯 여러 리스트 일괄생성 진행 중...</strong><br>`;
+          displayText += `• 현재 처리 중: <span style="color: #007bff; font-weight: bold;">${data.current_ticker || '준비 중'}</span> (${data.current_list || ''})<br>`;
+          displayText += `• 진행률: <span style="color: #28a745; font-weight: bold;">${data.processed_tickers}/${data.total_tickers} (${data.progress_percentage}%)</span><br>`;
+          if (data.elapsed_time) {
+            displayText += `• 경과 시간: <span style="color: #6c757d;">${data.elapsed_time}</span><br>`;
+          }
+          if (data.estimated_completion) {
+            displayText += `• 예상 완료: <span style="color: #dc3545;">${data.estimated_completion}</span>`;
+          }
+          
+          multiProgressText.innerHTML = displayText + '<div style="margin-top: 10px;"><button id="stop-multi-btn" onclick="stopBatchProcessing()" style="padding: 8px 16px; background-color: #dc3545; color: white; border: none; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer;">⏹️ 일괄생성 중단</button></div>';
+          multiProgressText.style.display = 'block';
+          progressText.style.display = 'none';
+          console.log('여러 리스트 진행상황 표시됨');
+        }
+      } else {
+        console.log('진행 중인 작업 없음 - 진행상황 표시 숨김');
+        // 진행 중인 작업이 없으면 진행상황 표시 숨기기
+        progressText.style.display = 'none';
+        multiProgressText.style.display = 'none';
+        
+        // 인터벌 정지
+        stopProgressMonitoring();
+      }
+    } catch (error) {
+      console.error('진행상황 업데이트 오류:', error);
+      // 오류 발생 시에도 진행상황 표시 영역을 숨김
+      const progressText = document.getElementById('current-progress-text');
+      const multiProgressText = document.getElementById('multi-progress-text');
+      if (progressText) progressText.style.display = 'none';
+      if (multiProgressText) multiProgressText.style.display = 'none';
+    }
+  }
+
+  // 진행상황 모니터링 시작
+  function startProgressMonitoring() {
+    console.log('진행상황 모니터링 시작 요청됨');
+    
+    // 기존 인터벌이 있으면 정리
+    stopProgressMonitoring();
+    
+    // 새 인터벌 시작
+    progressInterval = setInterval(updateProgressDisplay, 2000); // 2초마다 업데이트
+    updateProgressDisplay(); // 즉시 첫 번째 업데이트
+    
+    console.log('진행상황 모니터링 시작됨 - 인터벌 ID:', progressInterval);
+  }
+
+  // 진행상황 모니터링 정지
+  function stopProgressMonitoring() {
+    if (progressInterval) {
+      console.log('진행상황 모니터링 정지 요청됨 - 인터벌 ID:', progressInterval);
+      clearInterval(progressInterval);
+      progressInterval = null;
+      console.log('진행상황 모니터링 정지됨');
+    } else {
+      console.log('진행상황 모니터링이 이미 정지된 상태');
+    }
+  }
+
+  // 페이지 로드 시 진행상황 모니터링 시작
+  document.addEventListener('DOMContentLoaded', function() {
+    startProgressMonitoring();
+  });
+
+  async function loadStockLists() {
+    try {
+      const res = await fetch('/get_stock_lists');
+      const lists = await res.json();
+      const select = document.getElementById('stock-list-select');
+      select.innerHTML = '';
+      lists.forEach(listName => {
+        const option = document.createElement('option');
+        option.value = listName;
+        option.textContent = listName;
+        select.appendChild(option);
+      });
+
+      // Set current selected list
+      const currentListRes = await fetch('/get_current_stock_list');
+      const currentListData = await currentListRes.json();
+      select.value = currentListData.current_list;
+      document.getElementById('current-list-name').textContent = currentListData.current_list;
+
+      loadTickers(); // Load tickers for the initially selected list
+    } catch (error) {
+      console.error("종목 리스트를 불러오는 데 오류 발생: " + error.message);
+      console.error("Load stock lists error:", error);
+    }
+  }
+
+  async function selectStockList() {
+    const select = document.getElementById('stock-list-select');
+    const selectedListName = select.value;
+    try {
+      const res = await fetch('/select_stock_list', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ list_name: selectedListName })
+      });
+      const message = await res.text();
+      showInlineMessage(message, res.ok ? 'success' : 'error');
+      if (res.ok) {
+        document.getElementById('current-list-name').textContent = selectedListName;
+        loadTickers(); // Reload tickers for the newly selected list
+      }
+    } catch (error) {
+      showInlineMessage("종목 리스트 선택 중 오류 발생: " + error.message, 'error');
+      console.error("Select stock list error:", error);
+    }
+  }
+
+  async function createStockList() {
+    const newListName = document.getElementById('new-list-name').value.trim();
+    if (!newListName) {
+      showInlineMessage("새 리스트 이름을 입력하십시오.", 'error');
+      return;
+    }
+
+    try {
+      const res = await fetch('/create_stock_list', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ list_name: newListName })
+      });
+      const message = await res.text();
+      showInlineMessage(message, res.ok ? 'success' : 'error');
+      if (res.ok) {
+        document.getElementById('new-list-name').value = '';
+        document.getElementById('create-list-modal').style.display = 'none';
+        await loadStockLists(); // Reload lists to show the new one
+        // The new list is automatically selected by the backend
+      }
+    } catch (error) {
+      showInlineMessage("새 리스트 생성 중 오류 발생: " + error.message);
+      console.error("Create stock list error:", error);
+    }
+  }
+
+  async function deleteStockList() {
+    const select = document.getElementById('stock-list-select');
+    const selectedListName = select.value;
+
+    if (selectedListName === 'default') {
+      showInlineMessage("기본 종목 리스트는 삭제할 수 없습니다.", 'error');
+      return;
+    }
+
+    if (!confirm(`정말로 '${selectedListName}' 종목 리스트를 삭제하시겠습니까? 이 리스트에 포함된 모든 종목이 삭제됩니다.`)) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`/delete_stock_list?list_name=${selectedListName}`, {
+        method: 'DELETE'
+      });
+      const message = await res.text();
+      showInlineMessage(message, 'success');
+      if (res.ok) {
+        await loadStockLists(); // Reload lists and update current list
+      }
+    } catch (error) {
+      showInlineMessage("종목 리스트 삭제 중 오류 발생: " + error.message, 'error');
+      console.error("Delete stock list error:", error);
+    }
+  }
+
+  async function loadTickers() {
+    try {
+        const res = await fetch('/get_tickers');
+        const tickers = await res.json();
+        const tbody = document.querySelector('#ticker-table tbody');
+        tbody.innerHTML = '';
+
+        if (tickers.error) {
+            showInlineMessage("관심 종목을 불러오는 데 실패했습니다: " + tickers.error, 'error');
+            return;
+        }
+
+        // Sort tickers before rendering if a sort was applied
+        if (currentSortColumn !== -1) {
+            tickers.sort((a, b) => {
+                let valA, valB;
+                if (currentSortColumn === 0) { // Ticker column
+                    valA = a.ticker.toUpperCase();
+                    valB = b.ticker.toUpperCase();
+                } else if (currentSortColumn === 1) { // Company name column
+                    valA = a.name.toUpperCase();
+                    valB = b.name.toUpperCase();
+                }
+
+                if (valA < valB) return currentSortDirection === "asc" ? -1 : 1;
+                if (valA > valB) return currentSortDirection === "asc" ? 1 : -1;
+                return 0;
+            });
+        }
+
+        tickers.forEach(row => {
+          const ticker = row.ticker.toUpperCase();
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${ticker}</td>
+            <td>${row.name}</td>
+            <td><button onclick="deleteTicker('${ticker}')">삭제</button></td>
+            <td><button onclick="generateChart('${ticker}')">차트 생성</button></td>
+            <td><button onclick="viewChartAnalysis('${ticker}')">차트 분석 보기</button></td>
+          `;
+          tbody.appendChild(tr);
+        });
+    } catch (error) {
+        showInlineMessage("관심 종목 로드 중 오류 발생: " + error.message, 'error');
+        console.error("Load tickers error:", error);
+    }
+  }
+
+  function sortTable(column) {
+    if (currentSortColumn === column) {
+      currentSortDirection = currentSortDirection === "asc" ? "desc" : "asc";
+    } else {
+      currentSortColumn = column;
+      currentSortDirection = "asc";
+    }
+    loadTickers(); // Reload tickers with the new sort order
+  }
+
+  document.getElementById("ticker-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const ticker = document.getElementById("ticker").value.toUpperCase();
+    const lookupResultDiv = document.getElementById("lookup-result");
+    lookupResultDiv.innerHTML = `<p>조회 중...</p>`;
+
+    try {
+        const res = await fetch(`/lookup?ticker=${ticker}`);
+        if (!res.ok) {
+            const errorText = await res.text();
+            lookupResultDiv.innerHTML = `<p>조회 실패: ${errorText}</p>`;
+            return;
+        }
+        const data = await res.json();
+        if (data.name) {
+            lookupResultDiv.innerHTML = `
+                <p>${data.name} (${ticker})</p>
+                <button onclick="addTicker('${ticker}', '${data.name}')">등록</button>`;
+        } else {
+            lookupResultDiv.innerHTML = `<p>잘못된 코드이거나 종목을 찾을 수 없습니다.</p>`;
+        }
+    } catch (error) {
+        lookupResultDiv.innerHTML = `<p>조회 중 오류 발생: ${error.message}</p>`;
+        console.error("Lookup error:", error);
+    }
+  });
+
+  async function addTicker(ticker, name) {
+    try {
+        const res = await fetch('/add_ticker', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ticker, name })
+        });
+        const message = await res.text();
+        showInlineMessage(message, res.ok ? 'success' : 'error');
+        if (res.ok) {
+            loadTickers();
+            document.getElementById("lookup-result").innerHTML = '';
+            document.getElementById("ticker").value = '';
+        }
+    } catch (error) {
+        showInlineMessage("종목 추가 중 오류 발생: " + error.message, 'error');
+        console.error("Add ticker error:", error);
+    }
+  }
+
+  async function deleteTicker(ticker) {
+    if (!confirm(`정말로 ${ticker} 종목을 삭제하시겠습니까?`)) {
+        return;
+    }
+    try {
+        const res = await fetch(`/delete_ticker?ticker=${ticker}`, { method: 'DELETE' });
+        const message = await res.text();
+        showInlineMessage(message, 'success');
+        if (res.ok) {
+            loadTickers();
+        }
+    } catch (error) {
+        showInlineMessage("종목 삭제 중 오류 발생: " + error.message, 'error');
+        console.error("Delete ticker error:", error);
+    }
+  }
+
+  // 인라인 메시지 표시 함수
+  function showInlineMessage(message, type) {
+    // 기존 메시지 제거
+    const existingMessage = document.getElementById('inline-message');
+    if (existingMessage) {
+      existingMessage.remove();
+    }
+
+    // 새 메시지 생성
+    const messageDiv = document.createElement('div');
+    messageDiv.id = 'inline-message';
+    messageDiv.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      padding: 15px 20px;
+      border-radius: 8px;
+      color: white;
+      font-weight: bold;
+      z-index: 1000;
+      max-width: 400px;
+      word-wrap: break-word;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      animation: slideIn 0.3s ease-out;
+    `;
+    
+    if (type === 'success') {
+      messageDiv.style.backgroundColor = '#28a745';
+    } else if (type === 'warning') {
+      messageDiv.style.backgroundColor = '#ffc107';
+      messageDiv.style.color = '#212529';
+    } else if (type === 'info') {
+      messageDiv.style.backgroundColor = '#17a2b8';
+    } else {
+      messageDiv.style.backgroundColor = '#dc3545';
+    }
+    
+    // HTML 콘텐츠를 포함할 수 있도록 innerHTML 사용
+    if (message.includes('<') && message.includes('>')) {
+      messageDiv.innerHTML = message;
+    } else {
+      messageDiv.textContent = message;
+    }
+    
+    // CSS 애니메이션 추가
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes slideIn {
+        from {
+          transform: translateX(100%);
+          opacity: 0;
+        }
+        to {
+          transform: translateX(0);
+          opacity: 1;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+    
+    document.body.appendChild(messageDiv);
+    
+    // 3초 후 자동 제거
+    setTimeout(() => {
+      if (messageDiv.parentNode) {
+        messageDiv.style.animation = 'slideOut 0.3s ease-in';
+        messageDiv.style.transform = 'translateX(100%)';
+        messageDiv.style.opacity = '0';
+        setTimeout(() => {
+          if (messageDiv.parentNode) {
+            messageDiv.remove();
+          }
+        }, 300);
+      }
+    }, 3000);
+  }
+
+  async function generateChart(ticker) {
+    const button = event.target;
+    const originalText = button.textContent;
+    button.textContent = '생성 중...';
+    button.disabled = true;
+
+    try {
+        const res = await fetch(`/generate_chart/${ticker}`);
+        if (res.ok) {
+            const result = await res.json();
+            showInlineMessage(`✅ ${ticker} 차트 생성 완료!`, 'success');
+        } else {
+            const errorData = await res.json();
+            showInlineMessage(`❌ 차트 생성 실패: ${errorData.error || '알 수 없는 오류'}`, 'error');
+        }
+    } catch (error) {
+        showInlineMessage(`차트 생성 중 오류 발생: ${error.message}`, 'error');
+        console.error("Generate chart error:", error);
+    } finally {
+        button.textContent = originalText;
+        button.disabled = false;
+    }
+  }
+
+  async function viewChartAnalysis(ticker) {
+    try {
+        // 먼저 기존 파일 확인
+        const checkResponse = await fetch(`/check_existing_analysis/${ticker}`);
+        const checkData = await checkResponse.json();
+        
+        if (checkData.exists) {
+            // 기존 파일이 있으면 확인 창 띄우기
+            const userChoice = confirm(`${checkData.message}\n\n"확인"을 누르면 새로 생성하고, "취소"를 누르면 기존 파일을 사용합니다.`);
+            
+            if (userChoice) {
+                // 사용자가 새로 생성하기를 선택한 경우 - 직접 새 창에서 분석 페이지 열기
+                showInlineMessage(`🔄 ${ticker} 새로운 분석을 생성 중입니다... 잠시만 기다려주세요.`, 'info');
+                const newWindow = window.open(`/force_new_analysis_with_timestamp/${ticker}`, '_blank');
+                
+                // 초기 팝업 차단 확인 (즉시)
+                if (!newWindow || newWindow.closed || typeof newWindow.closed == 'undefined') {
+                    // 팝업이 차단된 경우 링크 제공
+                    const linkHtml = `<a href="/force_new_analysis_with_timestamp/${ticker}" target="_blank" style="color: #007bff; text-decoration: underline;">여기를 클릭하여 분석 페이지를 여세요</a>`;
+                    showInlineMessage(`⚠️ 팝업이 차단되었습니다. ${linkHtml} 또는 브라우저에서 팝업을 허용해주세요.`, 'warning');
+                } else {
+                    // 팝업이 열린 경우, 5초 후에 다시 한 번 확인 (분석 로딩 시간 고려)
+                    setTimeout(() => {
+                        try {
+                            if (newWindow.closed) {
+                                showInlineMessage(`❌ 분석창이 닫혔습니다. 다시 시도해주세요.`, 'warning');
+                            } else {
+                                showInlineMessage(`✅ ${ticker} 새로운 분석창이 열렸습니다.`, 'success');
+                            }
+                        } catch (e) {
+                            // 교차 출처 문제로 접근할 수 없는 경우는 정상적으로 열린 것으로 간주
+                            showInlineMessage(`✅ ${ticker} 새로운 분석창이 열렸습니다.`, 'success');
+                        }
+                    }, 5000);
+                }
+            } else {
+                // 사용자가 기존 파일을 사용하기를 선택한 경우
+                const newWindow = window.open(`/view_chart/${ticker}`, '_blank');
+                
+                // 약간의 지연 후 팝업 차단 확인
+                setTimeout(() => {
+                    if (!newWindow || newWindow.closed || typeof newWindow.closed == 'undefined') {
+                        // 팝업이 차단된 경우 링크 제공
+                        const linkHtml = `<a href="/view_chart/${ticker}" target="_blank" style="color: #007bff; text-decoration: underline;">여기를 클릭하여 분석 페이지를 여세요</a>`;
+                        showInlineMessage(`⚠️ 팝업이 차단되었습니다. ${linkHtml} 또는 브라우저에서 팝업을 허용해주세요.`, 'warning');
+                    }
+                }, 100);
+            }
+        } else {
+            // 기존 파일이 없으면 바로 분석 진행
+            const newWindow = window.open(`/view_chart/${ticker}`, '_blank');
+            
+            // 약간의 지연 후 팝업 차단 확인
+            setTimeout(() => {
+                if (!newWindow || newWindow.closed || typeof newWindow.closed == 'undefined') {
+                    // 팝업이 차단된 경우 링크 제공
+                    const linkHtml = `<a href="/view_chart/${ticker}" target="_blank" style="color: #007bff; text-decoration: underline;">여기를 클릭하여 분석 페이지를 여세요</a>`;
+                    showInlineMessage(`⚠️ 팝업이 차단되었습니다. ${linkHtml} 또는 브라우저에서 팝업을 허용해주세요.`, 'warning');
+                }
+            }, 100);
+        }
+    } catch (error) {
+        showInlineMessage(`차트 분석 확인 중 오류 발생: ${error.message}`, 'error');
+        console.error("View chart analysis error:", error);
+    }
+  }
+
+  async function generateAllChartsAndAnalysis() {
+    const select = document.getElementById('stock-list-select');
+    const selectedListName = select.value;
+    
+    if (!selectedListName) {
+      showInlineMessage("리스트를 선택해주세요.", 'error');
+      return;
+    }
+    
+    const button = document.getElementById('batch-generate-btn');
+    const originalText = button.textContent;
+    
+    button.textContent = '처리 중...';
+    button.disabled = true;
+    
+    // 진행상황 모니터링 시작
+    startProgressMonitoring();
+    
+    try {
+      const response = await fetch(`/generate_all_charts_and_analysis/${selectedListName}`);
+      const result = await response.json();
+      
+      if (response.ok) {
+        const summary = result.summary;
+        if (summary.stopped) {
+          showInlineMessage(`⏹️ 일괄 처리가 중단되었습니다!\n\n📊 처리 결과:\n• 총 종목 수: ${summary.total_tickers}개\n• 처리된 종목: ${summary.processed}개\n• 중단됨: 사용자 요청`, 'error');
+        } else {
+          showInlineMessage(`✅ 일괄 처리가 완료되었습니다!\n\n📊 처리 결과:\n• 총 종목 수: ${summary.total_tickers}개\n• 성공: ${summary.successful}개\n• 실패: ${summary.failed}개\n• 성공률: ${summary.success_rate}\n\n📈 전체 종목 분석 요약을 확인하려면 "현재 리스트 분석 요약 보기" 버튼을 클릭하세요.`, 'success');
+        }
+      } else {
+        showInlineMessage(`❌ 일괄 처리 실패: ${result.error}`, 'error');
+      }
+    } catch (error) {
+      showInlineMessage(`❌ 예상치 못한 오류 발생: ${error.message}`, 'error');
+      console.error("Generate all charts and analysis error:", error);
+    } finally {
+      button.textContent = originalText;
+      button.disabled = false;
+    }
+  }
+
+  async function showMultiListSelector() {
+    currentModalAction = 'generate';
+    document.getElementById('modal-title').textContent = '🎯 여러 리스트 일괄생성';
+    document.getElementById('modal-description').textContent = '일괄생성할 리스트들을 선택하세요. (여러 개 선택 가능)';
+    document.getElementById('modal-confirm-btn').textContent = '일괄생성 시작';
+    document.getElementById('modal-confirm-btn').style.backgroundColor = '#dc3545';
+    
+    await loadAllStockLists();
+    showMultiListModal();
+  }
+
+  async function showMultiSummarySelector() {
+    currentModalAction = 'summary';
+    document.getElementById('modal-title').textContent = '📊 여러 리스트 분석 요약';
+    document.getElementById('modal-description').textContent = '분석 요약을 볼 리스트들을 선택하세요. (여러 개 선택 가능)';
+    document.getElementById('modal-confirm-btn').textContent = '요약 보기';
+    document.getElementById('modal-confirm-btn').style.backgroundColor = '#6f42c1';
+    
+    await loadAllStockLists();
+    showMultiListModal();
+  }
+
+  async function loadAllStockLists() {
+    try {
+      const res = await fetch('/get_stock_lists');
+      allStockLists = await res.json();
+      
+      const container = document.getElementById('lists-container');
+      container.innerHTML = '';
+      
+      allStockLists.forEach(listName => {
+        const div = document.createElement('div');
+        div.style.marginBottom = '10px';
+        div.innerHTML = `
+          <label style="display: flex; align-items: center; cursor: pointer;">
+            <input type="checkbox" value="${listName}" style="margin-right: 10px;">
+            <span style="font-weight: bold;">${listName}</span>
+          </label>
+        `;
+        container.appendChild(div);
+      });
+    } catch (error) {
+      console.error("Error loading stock lists:", error);
+      showInlineMessage("리스트 목록을 불러오는 데 실패했습니다.", 'error');
+    }
+  }
+
+  function showMultiListModal() {
+    document.getElementById('multi-list-modal').style.display = 'block';
+  }
+
+  function closeMultiListModal() {
+    document.getElementById('multi-list-modal').style.display = 'none';
+    // 모든 체크박스 해제
+    const checkboxes = document.querySelectorAll('#lists-container input[type="checkbox"]');
+    checkboxes.forEach(cb => cb.checked = false);
+  }
+
+  async function confirmMultiListAction() {
+    const selectedLists = [];
+    const checkboxes = document.querySelectorAll('#lists-container input[type="checkbox"]:checked');
+    
+    checkboxes.forEach(cb => {
+      selectedLists.push(cb.value);
+    });
+    
+    if (selectedLists.length === 0) {
+      showInlineMessage('최소 하나의 리스트를 선택해주세요.', 'error');
+      return;
+    }
+    
+    closeMultiListModal();
+    
+    if (currentModalAction === 'generate') {
+      await generateMultipleListsAnalysis(selectedLists);
+    } else if (currentModalAction === 'summary') {
+      await showMultipleListsSummary(selectedLists);
+    }
+  }
+
+  async function generateMultipleListsAnalysis(selectedLists) {
+    if (!selectedLists || selectedLists.length === 0) {
+      showInlineMessage("리스트를 선택해주세요.", 'error');
+      return;
+    }
+    
+    const button = document.getElementById('multi-batch-generate-btn');
+    const originalText = button.textContent;
+    
+    button.textContent = '처리 중...';
+    button.disabled = true;
+    
+    // 진행상황 모니터링 시작
+    startProgressMonitoring();
+    
+    try {
+      const response = await fetch('/generate_multiple_lists_analysis', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          selected_lists: selectedLists
+        })
+      });
+      
+      const result = await response.json();
+      
+      if (response.ok) {
+        const summary = result.summary;
+        if (summary.stopped) {
+          showInlineMessage(`⏹️ 여러 리스트 일괄 처리가 중단되었습니다!\n\n📊 처리 결과:\n• 처리된 리스트: ${summary.total_lists}개\n• 총 종목 수: ${summary.total_tickers}개\n• 처리된 종목: ${summary.processed}개\n• 중단됨: 사용자 요청`);
+        } else {
+          showInlineMessage(`✅ 여러 리스트 일괄 처리가 완료되었습니다!\n\n📊 처리 결과:\n• 처리된 리스트: ${summary.total_lists}개\n• 총 종목 수: ${summary.total_tickers}개\n• 성공: ${summary.successful}개\n• 실패: ${summary.failed}개\n• 성공률: ${summary.success_rate}\n\n📈 여러 리스트 분석 요약을 확인하려면 "선택된 여러 리스트 분석 요약 보기" 버튼을 클릭하세요.`);
+        }
+      } else {
+        showInlineMessage(`❌ 여러 리스트 일괄 처리 실패: ${result.error}`);
+      }
+    } catch (error) {
+      showInlineMessage(`❌ 예상치 못한 오류 발생: ${error.message}`);
+      console.error("Generate multiple lists analysis error:", error);
+    } finally {
+      button.textContent = originalText;
+      button.disabled = false;
+    }
+  }
+
+  async function showMultipleListsSummary(selectedLists) {
+    const button = document.getElementById('multi-summary-btn');
+    const originalText = button.textContent;
+    button.textContent = '요약 불러오는 중...';
+    button.disabled = true;
+
+    console.log('Selected lists for summary:', selectedLists); // 디버깅용
+
+    try {
+      const res = await fetch('/get_multiple_lists_summaries', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ selected_lists: selectedLists })
+      });
+      const result = await res.json();
+      
+      console.log('Response from server:', result); // 디버깅용
+      
+      if (res.ok) {
+        // 파일 ID를 사용하여 새 창에서 요약 페이지 열기
+        const fileId = result.file_id;
+        console.log('Opening summary page with file ID:', fileId); // 디버깅용
+        window.open(`/multi_summary_page?file_id=${fileId}`, '_blank');
+      } else {
+        showInlineMessage(`여러 리스트 요약 불러오기 실패: ${result.error}`, 'error');
+        console.error("Multiple lists summary error:", result);
+      }
+    } catch (error) {
+      showInlineMessage("여러 리스트 요약 불러오기 중 예상치 못한 오류 발생: " + error.message, 'error');
+      console.error("Show multiple lists summary error:", error);
+    } finally {
+      button.textContent = originalText;
+      button.disabled = false;
+    }
+  }
+
+  async function cleanupFiles() {
+    if (!confirm('30일 이전 파일들을 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없습니다.')) {
+      return;
+    }
+    
+    try {
+      const response = await fetch('/cleanup-files', {
+        method: 'POST'
+      });
+      const result = await response.json();
+      
+      if (response.ok) {
+        showInlineMessage('✅ 파일 정리가 완료되었습니다!', 'success');
+      } else {
+        showInlineMessage(`❌ 파일 정리 실패: ${result.error}`, 'error');
+      }
+    } catch (error) {
+      showInlineMessage(`❌ 예상치 못한 오류 발생: ${error.message}`, 'error');
+      console.error("Cleanup files error:", error);
+    }
+  }
+
+  // 일괄 처리 중단 함수
+  async function stopBatchProcessing() {
+    if (!confirm('정말로 일괄 생성을 중단하시겠습니까?\n\n현재 처리 중인 종목이 완료되면 중단됩니다.')) {
+      return;
+    }
+    
+    try {
+      console.log('일괄 처리 중단 요청 전송...');
+      const response = await fetch('/stop_batch_processing', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
+      
+      const result = await response.json();
+      
+      if (response.ok) {
+        showInlineMessage('일괄 처리 중단이 요청되었습니다.\n현재 처리 중인 종목이 완료되면 중단됩니다.', 'success');
+        console.log('중단 요청 성공:', result.message);
+      } else {
+        showInlineMessage(`중단 요청 실패: ${result.error}`, 'error');
+        console.error('중단 요청 실패:', result);
+      }
+    } catch (error) {
+      showInlineMessage(`중단 요청 중 오류 발생: ${error.message}`, 'error');
+      console.error('중단 요청 오류:', error);
+    }
+  }
+
+  loadStockLists(); // Initial load of stock lists and tickers
+</script>
+{% endblock %}

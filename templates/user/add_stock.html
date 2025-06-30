@@ -1,0 +1,238 @@
+{% extends "base.html" %}
+
+{% block title %}{{ stock_list.name }}에 종목 추가{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <h2>➕ {{ stock_list.name }}에 종목 추가</h2>
+        <a href="{{ url_for('user_stock.view_stock_list', list_id=stock_list.id) }}" class="btn btn-secondary">← 리스트로</a>
+    </div>
+    <p>관심 있는 주식 종목을 이 리스트에 추가하세요.</p>
+</div>
+
+<div class="card">
+    <h3>🔍 종목 검색</h3>
+    <div style="margin-bottom: 1rem;">
+        <input type="text" id="stockSearch" placeholder="종목 코드나 이름으로 검색..." 
+               style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px;">
+        <div id="searchResults" style="margin-top: 0.5rem; max-height: 200px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; display: none;"></div>
+    </div>
+</div>
+
+<div class="card">
+    <h3>📈 종목 정보 입력</h3>
+    
+    <form method="POST" style="max-width: 600px;">
+        {{ form.hidden_tag() }}
+        
+        <div style="margin-bottom: 1rem;">
+            {{ form.ticker.label(style="display: block; margin-bottom: 0.5rem; font-weight: bold;") }}
+            {{ form.ticker(style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px;", placeholder="예: AAPL, 005930.KS") }}
+            <small style="color: #666; display: block; margin-top: 0.25rem;">
+                미국 주식: AAPL, GOOGL 등 | 한국 주식: 005930.KS, 000660.KS 등
+            </small>
+            {% if form.ticker.errors %}
+                <div style="color: #dc3545; font-size: 0.9rem; margin-top: 0.25rem;">
+                    {% for error in form.ticker.errors %}
+                        {{ error }}
+                    {% endfor %}
+                </div>
+            {% endif %}
+        </div>
+        
+        <div style="margin-bottom: 1rem;">
+            {{ form.name.label(style="display: block; margin-bottom: 0.5rem; font-weight: bold;") }}
+            {{ form.name(style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px;", placeholder="종목명 (선택사항)") }}
+            <small style="color: #666; display: block; margin-top: 0.25rem;">
+                종목명을 입력하면 자동으로 조회됩니다. 비워두어도 됩니다.
+            </small>
+            {% if form.name.errors %}
+                <div style="color: #dc3545; font-size: 0.9rem; margin-top: 0.25rem;">
+                    {% for error in form.name.errors %}
+                        {{ error }}
+                    {% endfor %}
+                </div>
+            {% endif %}
+        </div>
+        
+        <div id="stockInfo" style="margin-bottom: 1rem; padding: 1rem; background-color: #f8f9fa; border-radius: 4px; display: none;">
+            <h4>📊 종목 정보</h4>
+            <div id="stockDetails"></div>
+        </div>
+        
+        <div style="margin-bottom: 1rem;">
+            <p style="color: #666; font-size: 0.9rem;">
+                <strong>현재 리스트:</strong> {{ stock_list.name }}<br>
+                <strong>현재 종목 수:</strong> {{ stock_list.stocks|length }}개 / 최대 50개
+            </p>
+            {% if stock_list.stocks|length >= 45 %}
+                <div style="padding: 0.5rem; background-color: #fff3cd; border: 1px solid #ffeaa7; border-radius: 4px; color: #856404;">
+                    ⚠️ 리스트당 최대 50개의 종목만 추가할 수 있습니다. (현재 {{ stock_list.stocks|length }}개)
+                </div>
+            {% endif %}
+        </div>
+        
+        <div style="display: flex; gap: 1rem; margin-top: 2rem;">
+            <button type="submit" class="btn btn-success">➕ 종목 추가</button>
+            <a href="{{ url_for('user_stock.view_stock_list', list_id=stock_list.id) }}" class="btn btn-secondary">취소</a>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <h3>💡 종목 코드 가이드</h3>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem;">
+        <div style="border: 1px solid #ddd; border-radius: 8px; padding: 1rem;">
+            <h4>🇺🇸 미국 주식</h4>
+            <ul style="margin: 0; padding-left: 1.5rem;">
+                <li>AAPL - Apple Inc.</li>
+                <li>GOOGL - Alphabet Inc.</li>
+                <li>MSFT - Microsoft Corp.</li>
+                <li>TSLA - Tesla Inc.</li>
+                <li>AMZN - Amazon.com Inc.</li>
+            </ul>
+        </div>
+        
+        <div style="border: 1px solid #ddd; border-radius: 8px; padding: 1rem;">
+            <h4>🇰🇷 한국 주식</h4>
+            <ul style="margin: 0; padding-left: 1.5rem;">
+                <li>005930.KS - 삼성전자</li>
+                <li>000660.KS - SK하이닉스</li>
+                <li>035420.KS - NAVER</li>
+                <li>051910.KS - LG화학</li>
+                <li>006400.KS - 삼성SDI</li>
+            </ul>
+        </div>
+        
+        <div style="border: 1px solid #ddd; border-radius: 8px; padding: 1rem;">
+            <h4>📊 지수</h4>
+            <ul style="margin: 0; padding-left: 1.5rem;">
+                <li>^GSPC - S&P 500</li>
+                <li>^DJI - Dow Jones</li>
+                <li>^IXIC - NASDAQ</li>
+                <li>^KS11 - KOSPI</li>
+                <li>^KQ11 - KOSDAQ</li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <h3>🚀 빠른 작업</h3>
+    <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+        <a href="{{ url_for('user_stock.view_stock_list', list_id=stock_list.id) }}" class="btn btn-primary">📊 리스트 보기</a>
+        <a href="{{ url_for('user_stock.stock_lists') }}" class="btn btn-secondary">리스트 목록</a>
+        <a href="{{ url_for('user_stock.dashboard') }}" class="btn btn-primary">대시보드</a>
+    </div>
+</div>
+
+<script>
+let searchTimeout;
+
+// 종목 검색 기능
+document.getElementById('stockSearch').addEventListener('input', function() {
+    const query = this.value.trim();
+    const resultsDiv = document.getElementById('searchResults');
+    
+    clearTimeout(searchTimeout);
+    
+    if (query.length < 2) {
+        resultsDiv.style.display = 'none';
+        return;
+    }
+    
+    searchTimeout = setTimeout(() => {
+        fetch(`/user/search-stocks?q=${encodeURIComponent(query)}`)
+            .then(response => response.json())
+            .then(data => {
+                resultsDiv.innerHTML = '';
+                
+                if (data.length > 0) {
+                    data.forEach(stock => {
+                        const div = document.createElement('div');
+                        div.style.padding = '0.5rem';
+                        div.style.borderBottom = '1px solid #eee';
+                        div.style.cursor = 'pointer';
+                        div.innerHTML = `
+                            <strong>${stock.ticker}</strong> - ${stock.name}
+                            ${stock.sector ? `<br><small style="color: #666;">${stock.sector}</small>` : ''}
+                        `;
+                        
+                        div.addEventListener('click', () => {
+                            document.getElementById('ticker').value = stock.ticker;
+                            document.getElementById('name').value = stock.name;
+                            document.getElementById('stockSearch').value = '';
+                            resultsDiv.style.display = 'none';
+                            
+                            // 종목 정보 조회
+                            lookupStockInfo(stock.ticker);
+                        });
+                        
+                        resultsDiv.appendChild(div);
+                    });
+                    resultsDiv.style.display = 'block';
+                } else {
+                    resultsDiv.innerHTML = '<div style="padding: 0.5rem; color: #666;">검색 결과가 없습니다.</div>';
+                    resultsDiv.style.display = 'block';
+                }
+            })
+            .catch(error => {
+                console.log('검색 실패:', error);
+                resultsDiv.innerHTML = '<div style="padding: 0.5rem; color: #dc3545;">검색 중 오류가 발생했습니다.</div>';
+                resultsDiv.style.display = 'block';
+            });
+    }, 300);
+});
+
+// 종목 코드 입력 시 자동으로 종목명 조회
+document.getElementById('ticker').addEventListener('blur', function() {
+    const ticker = this.value.trim().toUpperCase();
+    if (ticker) {
+        lookupStockInfo(ticker);
+    }
+});
+
+// 종목 정보 조회 함수
+function lookupStockInfo(ticker) {
+    fetch(`/user/lookup-ticker?ticker=${ticker}`)
+        .then(response => response.json())
+        .then(data => {
+            const stockInfoDiv = document.getElementById('stockInfo');
+            const stockDetailsDiv = document.getElementById('stockDetails');
+            
+            if (data.success && data.name) {
+                document.getElementById('name').value = data.name;
+                
+                let details = `<p><strong>${data.name}</strong></p>`;
+                if (data.sector) details += `<p><strong>섹터:</strong> ${data.sector}</p>`;
+                if (data.industry) details += `<p><strong>산업:</strong> ${data.industry}</p>`;
+                if (data.country) details += `<p><strong>국가:</strong> ${data.country}</p>`;
+                if (data.market_cap) {
+                    const marketCap = (data.market_cap / 1e9).toFixed(2);
+                    details += `<p><strong>시가총액:</strong> ${marketCap}B USD</p>`;
+                }
+                
+                stockDetailsDiv.innerHTML = details;
+                stockInfoDiv.style.display = 'block';
+            } else {
+                stockInfoDiv.style.display = 'none';
+            }
+        })
+        .catch(error => {
+            console.log('종목명 조회 실패:', error);
+            document.getElementById('stockInfo').style.display = 'none';
+        });
+}
+
+// 검색 결과 외부 클릭 시 닫기
+document.addEventListener('click', function(e) {
+    const searchResults = document.getElementById('searchResults');
+    const stockSearch = document.getElementById('stockSearch');
+    
+    if (!searchResults.contains(e.target) && !stockSearch.contains(e.target)) {
+        searchResults.style.display = 'none';
+    }
+});
+</script>
+{% endblock %} 

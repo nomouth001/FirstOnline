@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+
+{% block title %}뉴스레터 설정{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-8 offset-md-2">
+            <div class="card">
+                <div class="card-header">
+                    <h3>📧 뉴스레터 설정</h3>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="{{ url_for('newsletter.update_settings') }}">
+                        <div class="mb-3">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="is_active" name="is_active" 
+                                       {% if subscription.is_active %}checked{% endif %}>
+                                <label class="form-check-label" for="is_active">
+                                    <strong>뉴스레터 구독 활성화</strong>
+                                </label>
+                            </div>
+                            <small class="form-text text-muted">체크하면 뉴스레터를 받을 수 있습니다.</small>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="frequency" class="form-label"><strong>발송 빈도</strong></label>
+                            <select class="form-select" id="frequency" name="frequency">
+                                <option value="daily" {% if subscription.frequency == 'daily' %}selected{% endif %}>매일</option>
+                                <option value="weekly" {% if subscription.frequency == 'weekly' %}selected{% endif %}>매주</option>
+                                <option value="monthly" {% if subscription.frequency == 'monthly' %}selected{% endif %}>매월</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="send_time" class="form-label"><strong>발송 시간</strong></label>
+                            <input type="time" class="form-control" id="send_time" name="send_time" 
+                                   value="{{ subscription.send_time.strftime('%H:%M') if subscription.send_time else '09:00' }}">
+                            <small class="form-text text-muted">뉴스레터를 받고 싶은 시간을 설정하세요.</small>
+                        </div>
+
+                        <hr>
+
+                        <h5>📋 포함할 내용</h5>
+                        
+                        <div class="mb-3">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="include_summary" name="include_summary" 
+                                       {% if subscription.include_summary %}checked{% endif %}>
+                                <label class="form-check-label" for="include_summary">
+                                    <strong>핵심 요약</strong>
+                                </label>
+                            </div>
+                            <small class="form-text text-muted">AI 분석의 핵심 요약을 포함합니다.</small>
+                        </div>
+
+                        <div class="mb-3">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="include_charts" name="include_charts" 
+                                       {% if subscription.include_charts %}checked{% endif %}>
+                                <label class="form-check-label" for="include_charts">
+                                    <strong>차트 정보</strong>
+                                </label>
+                            </div>
+                            <small class="form-text text-muted">기술적 차트 분석 정보를 포함합니다.</small>
+                        </div>
+
+                        <div class="mb-3">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="include_technical_analysis" name="include_technical_analysis" 
+                                       {% if subscription.include_technical_analysis %}checked{% endif %}>
+                                <label class="form-check-label" for="include_technical_analysis">
+                                    <strong>상세 분석 링크</strong>
+                                </label>
+                            </div>
+                            <small class="form-text text-muted">웹사이트의 상세 분석 페이지 링크를 포함합니다.</small>
+                        </div>
+
+                        <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                            <button type="submit" class="btn btn-primary">설정 저장</button>
+                        </div>
+                    </form>
+
+                    <hr>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <a href="{{ url_for('newsletter.preview') }}" class="btn btn-outline-info w-100">
+                                👁️ 뉴스레터 미리보기
+                            </a>
+                        </div>
+                        <div class="col-md-6">
+                            <button onclick="sendTestNewsletter()" class="btn btn-outline-success w-100">
+                                📧 테스트 뉴스레터 발송
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="row mt-2">
+                        <div class="col-md-6">
+                            <a href="{{ url_for('newsletter.preview_multi') }}" class="btn btn-outline-warning w-100">
+                                📊 통합 뉴스레터 미리보기
+                            </a>
+                            <small class="form-text text-muted">모든 리스트의 종목을 포함한 뉴스레터</small>
+                        </div>
+                        <div class="col-md-6">
+                            <button onclick="sendTestMultiNewsletter()" class="btn btn-outline-primary w-100">
+                                📧 통합 테스트 발송
+                            </button>
+                            <small class="form-text text-muted">모든 리스트 종목 포함</small>
+                        </div>
+                    </div>
+
+                    <div class="mt-3">
+                        <a href="{{ url_for('newsletter.history') }}" class="btn btn-outline-secondary w-100">
+                            📊 발송 히스토리 보기
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function sendTestNewsletter() {
+    if (confirm('테스트 뉴스레터를 발송하시겠습니까?')) {
+        fetch('{{ url_for("newsletter.send_test") }}')
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('테스트 뉴스레터가 발송되었습니다!');
+                } else {
+                    alert('발송 실패: ' + data.message);
+                }
+            })
+            .catch(error => {
+                alert('오류 발생: ' + error);
+            });
+    }
+}
+
+function sendTestMultiNewsletter() {
+    if (confirm('모든 리스트의 종목을 포함한 통합 테스트 뉴스레터를 발송하시겠습니까?')) {
+        fetch('{{ url_for("newsletter.send_test_multi") }}')
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('통합 테스트 뉴스레터가 발송되었습니다!\n' + 
+                          (data.list_count ? `${data.list_count}개 리스트, ` : '') + 
+                          `${data.stock_count}개 종목 포함`);
+                } else {
+                    alert('발송 실패: ' + data.message);
+                }
+            })
+            .catch(error => {
+                alert('오류 발생: ' + error);
+            });
+    }
+}
+</script>
+{% endblock %} 

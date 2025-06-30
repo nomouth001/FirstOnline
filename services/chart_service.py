@@ -114,9 +114,16 @@ def generate_chart(ticker):
     os.makedirs(DEBUG_DIR, exist_ok=True)
 
     try:
-        logging.info(f"[{ticker}] Downloading data from yfinance...")
-        df = yf.download(ticker, start=start, end=datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1), auto_adjust=False)
-        logging.info(f"[{ticker}] Data download completed. DataFrame shape: {df.shape}")
+        logging.info(f"[{ticker}] 데이터 로딩 중... (캐싱 사용)")
+        
+        # 캐싱 서비스 사용
+        from services.data_cache_service import data_cache_service
+        df, is_cached = data_cache_service.get_cached_data(ticker, start)
+        
+        if is_cached:
+            logging.info(f"[{ticker}] 캐시된 데이터 사용. DataFrame shape: {df.shape}")
+        else:
+            logging.info(f"[{ticker}] 새로운 데이터 다운로드 완료. DataFrame shape: {df.shape}")
         
         if df.empty:
             logging.warning(f"[{ticker}] No data downloaded for {ticker}. This might be due to invalid ticker symbol or data availability issues.")

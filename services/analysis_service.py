@@ -763,17 +763,17 @@ def analyze_ticker_internal_logic(ticker, analysis_html_path):
                 temp_text.write(analysis_gemini)
                 temp_text_path = temp_text.name
             
-            analysis_text_path = os.path.join(analysis_folder, f"{ticker}_analysis_{current_date_str}.txt")
+            analysis_text_path = os.path.join(ANALYSIS_DIR, f"{ticker}_analysis_{current_date_str}.txt")
             
             # analysis 디렉토리 생성 및 권한 확보
             try:
-                os.makedirs(analysis_folder, exist_ok=True)
+                os.makedirs(ANALYSIS_DIR, exist_ok=True)
             except PermissionError:
                 try:
-                    subprocess.run(['sudo', 'mkdir', '-p', analysis_folder], check=True, capture_output=True)
-                    subprocess.run(['sudo', 'chown', 'ubuntu:ubuntu', analysis_folder], check=True, capture_output=True)
-                    subprocess.run(['sudo', 'chmod', '755', analysis_folder], check=True, capture_output=True)
-                    logging.info(f"sudo로 분석 디렉토리 생성: {analysis_folder}")
+                    subprocess.run(['/usr/bin/sudo', 'mkdir', '-p', ANALYSIS_DIR], check=True, capture_output=True)
+                    subprocess.run(['/usr/bin/sudo', 'chown', 'ubuntu:ubuntu', ANALYSIS_DIR], check=True, capture_output=True)
+                    subprocess.run(['/usr/bin/sudo', 'chmod', '755', ANALYSIS_DIR], check=True, capture_output=True)
+                    logging.info(f"sudo로 분석 디렉토리 생성: {ANALYSIS_DIR}")
                 except Exception as sudo_error:
                     logging.error(f"sudo 분석 디렉토리 생성 실패: {sudo_error}")
                     raise
@@ -785,9 +785,9 @@ def analyze_ticker_internal_logic(ticker, analysis_html_path):
                 logging.info(f"[{ticker}] Analysis text saved to original path: {analysis_text_path}")
             except PermissionError:
                 try:
-                    subprocess.run(['sudo', 'cp', temp_text_path, analysis_text_path], check=True, capture_output=True)
-                    subprocess.run(['sudo', 'chown', 'ubuntu:ubuntu', analysis_text_path], check=True, capture_output=True)
-                    subprocess.run(['sudo', 'chmod', '644', analysis_text_path], check=True, capture_output=True)
+                    subprocess.run(['/usr/bin/sudo', 'cp', temp_text_path, analysis_text_path], check=True, capture_output=True)
+                    subprocess.run(['/usr/bin/sudo', 'chown', 'ubuntu:ubuntu', analysis_text_path], check=True, capture_output=True)
+                    subprocess.run(['/usr/bin/sudo', 'chmod', '644', analysis_text_path], check=True, capture_output=True)
                     os.unlink(temp_text_path)
                     logging.info(f"[{ticker}] Analysis text saved with sudo: {analysis_text_path}")
                 except Exception as sudo_error:
@@ -814,9 +814,9 @@ def analyze_ticker_internal_logic(ticker, analysis_html_path):
             logging.info(f"[{ticker}] HTML file saved to original path: {analysis_html_path}")
         except PermissionError:
             try:
-                subprocess.run(['sudo', 'cp', temp_html_path, analysis_html_path], check=True, capture_output=True)
-                subprocess.run(['sudo', 'chown', 'ubuntu:ubuntu', analysis_html_path], check=True, capture_output=True)
-                subprocess.run(['sudo', 'chmod', '644', analysis_html_path], check=True, capture_output=True)
+                subprocess.run(['/usr/bin/sudo', 'cp', temp_html_path, analysis_html_path], check=True, capture_output=True)
+                subprocess.run(['/usr/bin/sudo', 'chown', 'ubuntu:ubuntu', analysis_html_path], check=True, capture_output=True)
+                subprocess.run(['/usr/bin/sudo', 'chmod', '644', analysis_html_path], check=True, capture_output=True)
                 os.unlink(temp_html_path)
                 logging.info(f"[{ticker}] HTML file saved with sudo: {analysis_html_path}")
             except Exception as sudo_error:

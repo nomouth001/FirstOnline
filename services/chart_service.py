@@ -377,11 +377,11 @@ def generate(df_input, freq_label, suffix, ticker):
         try:
             os.makedirs(date_folder, exist_ok=True)
         except PermissionError:
-            # 디렉토리 생성 권한이 없으면 sudo 사용
+            # 디렉토리 생성 권한이 없으면 sudo 사용 (절대 경로)
             try:
-                subprocess.run(['sudo', 'mkdir', '-p', date_folder], check=True, capture_output=True)
-                subprocess.run(['sudo', 'chown', 'ubuntu:ubuntu', date_folder], check=True, capture_output=True)
-                subprocess.run(['sudo', 'chmod', '755', date_folder], check=True, capture_output=True)
+                subprocess.run(['/usr/bin/sudo', 'mkdir', '-p', date_folder], check=True, capture_output=True)
+                subprocess.run(['/usr/bin/sudo', 'chown', 'ubuntu:ubuntu', date_folder], check=True, capture_output=True)
+                subprocess.run(['/usr/bin/sudo', 'chmod', '755', date_folder], check=True, capture_output=True)
                 logging.info(f"sudo로 디렉토리 생성: {date_folder}")
             except Exception as sudo_error:
                 logging.error(f"sudo 디렉토리 생성 실패: {sudo_error}")
@@ -393,11 +393,11 @@ def generate(df_input, freq_label, suffix, ticker):
             os.chmod(final_path, 0o644)  # 644 권한 설정
             logging.info(f"차트 파일 저장 성공: {final_path}")
         except PermissionError:
-            # 권한 문제 시 sudo로 복사 후 권한 변경
+            # 권한 문제 시 sudo로 복사 후 권한 변경 (절대 경로)
             try:
-                subprocess.run(['sudo', 'cp', temp_path, final_path], check=True, capture_output=True)
-                subprocess.run(['sudo', 'chown', 'ubuntu:ubuntu', final_path], check=True, capture_output=True)
-                subprocess.run(['sudo', 'chmod', '644', final_path], check=True, capture_output=True)
+                subprocess.run(['/usr/bin/sudo', 'cp', temp_path, final_path], check=True, capture_output=True)
+                subprocess.run(['/usr/bin/sudo', 'chown', 'ubuntu:ubuntu', final_path], check=True, capture_output=True)
+                subprocess.run(['/usr/bin/sudo', 'chmod', '644', final_path], check=True, capture_output=True)
                 os.unlink(temp_path)  # 임시 파일 삭제
                 logging.info(f"sudo로 차트 파일 저장: {final_path}")
             except Exception as sudo_error:
@@ -422,9 +422,9 @@ def generate(df_input, freq_label, suffix, ticker):
                     shutil.move(temp_debug_path, debug_path)
                     os.chmod(debug_path, 0o644)
                 except PermissionError:
-                    subprocess.run(['sudo', 'cp', temp_debug_path, debug_path], check=True, capture_output=True)
-                    subprocess.run(['sudo', 'chown', 'ubuntu:ubuntu', debug_path], check=True, capture_output=True)
-                    subprocess.run(['sudo', 'chmod', '644', debug_path], check=True, capture_output=True)
+                    subprocess.run(['/usr/bin/sudo', 'cp', temp_debug_path, debug_path], check=True, capture_output=True)
+                    subprocess.run(['/usr/bin/sudo', 'chown', 'ubuntu:ubuntu', debug_path], check=True, capture_output=True)
+                    subprocess.run(['/usr/bin/sudo', 'chmod', '644', debug_path], check=True, capture_output=True)
                     os.unlink(temp_debug_path)
                 
                 logging.info(f"디버그 파일 저장: {debug_path}")

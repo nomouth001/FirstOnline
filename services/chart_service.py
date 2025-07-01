@@ -35,7 +35,7 @@ from ta.volatility import BollingerBands
 from ta.trend import IchimokuIndicator
 from datetime import datetime, timedelta
 from config import CHART_DIR, DEBUG_DIR
-from utils.file_manager import get_date_folder_path
+from utils.file_manager import get_date_folder_path, save_image_with_permissions, safe_write_file
 import signal
 import threading
 from functools import wraps
@@ -357,85 +357,26 @@ def generate(df_input, freq_label, suffix, ticker):
 
     # 원래 경로(static/charts)에 직접 저장 + 권한 문제 해결
     try:
-        import tempfile
-        import shutil
-        import stat
-        import subprocess
-        
-        # 1. 원래 경로 설정
+        # 1. 차트 이미지 저장
         date_folder = get_date_folder_path(CHART_DIR, current_date_str)
         final_path = os.path.join(date_folder, f"{ticker}_{suffix}_{current_date_str}.png")
         
-        # 2. 임시 파일에 차트 생성 (권한 문제 없음)
-        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as temp_file:
-            temp_path = temp_file.name
+        success = save_image_with_permissions(fig, final_path, bbox_inches="tight")
+        if not success:
+            logging.error(f"차트 이미지 저장 실패: {final_path}")
+            return None
         
-        fig.savefig(temp_path, bbox_inches="tight")
-        plt.close('all')
-        
-        # 3. static 디렉토리 생성 및 권한 확보
-        try:
-            os.makedirs(date_folder, exist_ok=True)
-        except PermissionError:
-            # 디렉토리 생성 권한이 없으면 sudo 사용 (절대 경로)
-            try:
-                subprocess.run(['/usr/bin/sudo', 'mkdir', '-p', date_folder], check=True, capture_output=True)
-                subprocess.run(['/usr/bin/sudo', 'chown', 'ubuntu:ubuntu', date_folder], check=True, capture_output=True)
-                subprocess.run(['/usr/bin/sudo', 'chmod', '755', date_folder], check=True, capture_output=True)
-                logging.info(f"sudo로 디렉토리 생성: {date_folder}")
-            except Exception as sudo_error:
-                logging.error(f"sudo 디렉토리 생성 실패: {sudo_error}")
-                raise
-        
-        # 4. 임시 파일을 최종 경로로 이동
-        try:
-            shutil.move(temp_path, final_path)
-            os.chmod(final_path, 0o644)  # 644 권한 설정
-            logging.info(f"차트 파일 저장 성공: {final_path}")
-        except PermissionError:
-            # 권한 문제 시 sudo로 복사 후 권한 변경 (절대 경로)
-            try:
-                subprocess.run(['/usr/bin/sudo', 'cp', temp_path, final_path], check=True, capture_output=True)
-                subprocess.run(['/usr/bin/sudo', 'chown', 'ubuntu:ubuntu', final_path], check=True, capture_output=True)
-                subprocess.run(['/usr/bin/sudo', 'chmod', '644', final_path], check=True, capture_output=True)
-                os.unlink(temp_path)  # 임시 파일 삭제
-                logging.info(f"sudo로 차트 파일 저장: {final_path}")
-            except Exception as sudo_error:
-                logging.error(f"sudo 파일 저장 실패: {sudo_error}")
-                raise
-        
-        # 5. 디버그 정보도 동일한 방식으로 저장
+        # 2. 디버그 정보도 동일한 방식으로 저장
         if freq_label == "Daily":
             try:
                 debug_content = f"[EMA DEBUG] Ticker: {ticker} (Chart Generation)\n"
                 debug_content += "[Daily EMA for Chart]\n"
                 debug_content += '\n'.join(daily_ema_data)
                 
-                # 임시 디버그 파일 생성
-                with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False, encoding='utf-8') as temp_debug:
-                    temp_debug.write(debug_content)
-                    temp_debug_path = temp_debug.name
-                
                 debug_date_folder = os.path.join("static", "debug", current_date_str)
                 debug_path = os.path.join(debug_date_folder, f"{ticker}_ema_debug_{current_date_str}.txt")
                 
-                # 디버그 디렉토리 생성
-                try:
-                    os.makedirs(debug_date_folder, exist_ok=True)
-                except PermissionError:
-                    subprocess.run(['/usr/bin/sudo', 'mkdir', '-p', debug_date_folder], check=True, capture_output=True)
-                    subprocess.run(['/usr/bin/sudo', 'chown', 'ubuntu:ubuntu', debug_date_folder], check=True, capture_output=True)
-                    subprocess.run(['/usr/bin/sudo', 'chmod', '755', debug_date_folder], check=True, capture_output=True)
-                
-                try:
-                    shutil.move(temp_debug_path, debug_path)
-                    os.chmod(debug_path, 0o644)
-                except PermissionError:
-                    subprocess.run(['/usr/bin/sudo', 'cp', temp_debug_path, debug_path], check=True, capture_output=True)
-                    subprocess.run(['/usr/bin/sudo', 'chown', 'ubuntu:ubuntu', debug_path], check=True, capture_output=True)
-                    subprocess.run(['/usr/bin/sudo', 'chmod', '644', debug_path], check=True, capture_output=True)
-                    os.unlink(temp_debug_path)
-                
+                safe_write_file(debug_path, debug_content)
                 logging.info(f"디버그 파일 저장: {debug_path}")
                 
             except Exception as debug_error:

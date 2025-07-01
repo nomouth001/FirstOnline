@@ -3,6 +3,7 @@ import json
 import logging
 from datetime import datetime, timedelta
 import yfinance as yf
+from utils.file_manager import safe_write_file
 
 class DataCacheService:
     """Yahoo Finance 데이터 캐싱 서비스"""
@@ -129,8 +130,8 @@ class DataCacheService:
                 str(date): values for date, values in cache_data['data'].items()
             }
             
-            with open(cache_file, 'w', encoding='utf-8') as f:
-                json.dump(cache_data, f, ensure_ascii=False, indent=2)
+            cache_json = json.dumps(cache_data, ensure_ascii=False, indent=2)
+            safe_write_file(cache_file, cache_json)
             
             logging.info(f"[{ticker}] 데이터 캐시 저장 완료")
             

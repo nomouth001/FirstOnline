@@ -3,6 +3,9 @@ import shutil
 from datetime import datetime, timedelta
 import logging
 from config import USE_DATE_FOLDERS, DAYS_TO_KEEP, CHART_DIR, ANALYSIS_DIR, SUMMARY_DIR, DEBUG_DIR, MEMO_DIR, MULTI_SUMMARY_DIR
+import tempfile
+import subprocess
+from typing import Union
 
 def get_date_folder_path(base_dir, date_str=None):
     """날짜별 폴더 경로를 생성합니다."""
@@ -141,4 +144,148 @@ def migrate_debug_files_to_date_folders():
     if moved_count > 0:
         logging.info(f"Debug file migration completed: {moved_count} files moved, {error_count} errors")
     
-    return moved_count, error_count 
+    return moved_count, error_count
+
+def get_file_path_with_timestamp(base_dir: str, ticker: str, suffix: str, extension: str = "html") -> str:
+    """타임스탬프가 포함된 파일 경로를 생성합니다."""
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%H%M%S")
+    filename = f"{ticker}_{timestamp}.{extension}"
+    return os.path.join(base_dir, filename)
+
+def safe_write_file(file_path: str, content: Union[str, bytes], mode: str = 'w', encoding: str = 'utf-8') -> bool:
+    """
+    권한 문제를 해결하면서 안전하게 파일을 쓰는 통합 함수
+    
+    Args:
+        file_path: 저장할 파일 경로
+        content: 파일 내용 (문자열 또는 바이트)
+        mode: 파일 모드 ('w', 'wb' 등)
+        encoding: 인코딩 (텍스트 모드에서만 사용)
+    
+    Returns:
+        bool: 성공 여부
+    """
+    try:
+        # 1. 디렉토리 경로 확보
+        directory = os.path.dirname(file_path)
+        if directory:
+            ensure_directory_with_permissions(directory)
+        
+        # 2. 임시 파일에 내용 작성
+        is_binary = 'b' in mode
+        temp_mode = 'wb' if is_binary else 'w'
+        temp_encoding = None if is_binary else encoding
+        
+        with tempfile.NamedTemporaryFile(mode=temp_mode, encoding=temp_encoding, delete=False) as temp_file:
+            temp_file.write(content)
+            temp_path = temp_file.name
+        
+        # 3. 임시 파일을 최종 경로로 이동
+        try:
+            shutil.move(temp_path, file_path)
+            os.chmod(file_path, 0o644)
+            logging.info(f"파일 저장 성공: {file_path}")
+            return True
+        except PermissionError:
+            # sudo를 사용한 권한 처리
+            try:
+                subprocess.run(['/usr/bin/sudo', 'cp', temp_path, file_path], check=True, capture_output=True)
+                subprocess.run(['/usr/bin/sudo', 'chown', 'ubuntu:ubuntu', file_path], check=True, capture_output=True)
+                subprocess.run(['/usr/bin/sudo', 'chmod', '644', file_path], check=True, capture_output=True)
+                os.unlink(temp_path)  # 임시 파일 삭제
+                logging.info(f"sudo로 파일 저장 성공: {file_path}")
+                return True
+            except Exception as sudo_error:
+                logging.error(f"sudo 파일 저장 실패: {sudo_error}")
+                # 임시 파일 정리
+                try:
+                    os.unlink(temp_path)
+                except:
+                    pass
+                return False
+                
+    except Exception as e:
+        logging.error(f"파일 저장 실패 {file_path}: {e}")
+        return False
+
+def ensure_directory_with_permissions(directory: str) -> bool:
+    """
+    디렉토리 생성 및 권한 확보
+    
+    Args:
+        directory: 생성할 디렉토리 경로
+    
+    Returns:
+        bool: 성공 여부
+    """
+    try:
+        os.makedirs(directory, exist_ok=True)
+        return True
+    except PermissionError:
+        try:
+            subprocess.run(['/usr/bin/sudo', 'mkdir', '-p', directory], check=True, capture_output=True)
+            subprocess.run(['/usr/bin/sudo', 'chown', 'ubuntu:ubuntu', directory], check=True, capture_output=True)
+            subprocess.run(['/usr/bin/sudo', 'chmod', '755', directory], check=True, capture_output=True)
+            logging.info(f"sudo로 디렉토리 생성: {directory}")
+            return True
+        except Exception as sudo_error:
+            logging.error(f"sudo 디렉토리 생성 실패: {sudo_error}")
+            return False
+    except Exception as e:
+        logging.error(f"디렉토리 생성 실패 {directory}: {e}")
+        return False
+
+def save_image_with_permissions(fig, file_path: str, **kwargs) -> bool:
+    """
+    matplotlib figure를 권한 처리하면서 안전하게 저장
+    
+    Args:
+        fig: matplotlib figure 객체
+        file_path: 저장할 파일 경로
+        **kwargs: savefig에 전달할 추가 인자
+    
+    Returns:
+        bool: 성공 여부
+    """
+    try:
+        import matplotlib.pyplot as plt
+        
+        # 1. 디렉토리 경로 확보
+        directory = os.path.dirname(file_path)
+        if directory:
+            ensure_directory_with_permissions(directory)
+        
+        # 2. 임시 파일에 이미지 저장
+        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as temp_file:
+            temp_path = temp_file.name
+        
+        fig.savefig(temp_path, **kwargs)
+        plt.close('all')
+        
+        # 3. 임시 파일을 최종 경로로 이동
+        try:
+            shutil.move(temp_path, file_path)
+            os.chmod(file_path, 0o644)
+            logging.info(f"이미지 저장 성공: {file_path}")
+            return True
+        except PermissionError:
+            try:
+                subprocess.run(['/usr/bin/sudo', 'cp', temp_path, file_path], check=True, capture_output=True)
+                subprocess.run(['/usr/bin/sudo', 'chown', 'ubuntu:ubuntu', file_path], check=True, capture_output=True)
+                subprocess.run(['/usr/bin/sudo', 'chmod', '644', file_path], check=True, capture_output=True)
+                os.unlink(temp_path)
+                logging.info(f"sudo로 이미지 저장 성공: {file_path}")
+                return True
+            except Exception as sudo_error:
+                logging.error(f"sudo 이미지 저장 실패: {sudo_error}")
+                try:
+                    os.unlink(temp_path)
+                except:
+                    pass
+                return False
+                
+    except Exception as e:
+        logging.error(f"이미지 저장 실패 {file_path}: {e}")
+        plt.close('all')
+        return False 

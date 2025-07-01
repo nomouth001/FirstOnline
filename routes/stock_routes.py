@@ -3,9 +3,12 @@ import csv
 import json
 import logging
 import yfinance as yf
-from flask import Blueprint, request, jsonify, session
+from datetime import datetime
+from flask import Blueprint, request, jsonify, session, flash
 from flask_login import login_required, current_user
 from models import db, StockList, Stock, get_analysis_summary_path
+from utils.file_manager import safe_write_file
+from config import SUMMARY_DIR
 
 # Blueprint 생성
 stock_bp = Blueprint('stock', __name__)
@@ -13,28 +16,37 @@ stock_bp = Blueprint('stock', __name__)
 @stock_bp.route("/get_current_stock_list")
 @login_required
 def get_current_stock_list():
-    """현재 기본 리스트 반환"""
-    current_list_name = session.get('current_stock_list')
+    """현재 선택된 주식 리스트 이름 반환"""
+    current_list_name = session.get('current_stock_list', 'default')
     
-    if current_list_name:
-        return jsonify({"current_list": current_list_name})
-    
+    # 어드민인 경우 리스트 존재 여부만 확인
     if current_user.is_administrator():
-        # 어드민은 첫 번째 리스트를 기본으로 사용
-        first_list = StockList.query.first()
-        if first_list:
-            session['current_stock_list'] = first_list.name
-            return jsonify({"current_list": first_list.name})
+        stock_list = StockList.query.filter_by(name=current_list_name).first()
+        if stock_list:
+            return jsonify({"current_list": current_list_name})
         else:
-            return jsonify({"current_list": "default"})
+            # 어드민용 첫 번째 리스트로 변경
+            first_list = StockList.query.first()
+            if first_list:
+                session['current_stock_list'] = first_list.name
+                return jsonify({"current_list": first_list.name})
+            else:
+                session['current_stock_list'] = 'default'
+                return jsonify({"current_list": 'default'})
+    
+    # 일반 사용자인 경우 자신의 리스트만 확인
+    stock_list = StockList.query.filter_by(user_id=current_user.id, name=current_list_name).first()
+    if stock_list:
+        return jsonify({"current_list": current_list_name})
     else:
-        # 일반 사용자는 기본 리스트 찾기
+        # 기본 리스트로 변경
         default_list = StockList.query.filter_by(user_id=current_user.id, is_default=True).first()
         if default_list:
             session['current_stock_list'] = default_list.name
             return jsonify({"current_list": default_list.name})
         else:
-            return jsonify({"current_list": "default"})
+            session['current_stock_list'] = 'default'
+            return jsonify({"current_list": 'default'})
 
 @stock_bp.route("/get_stock_lists")
 @login_required
@@ -317,4 +329,71 @@ def delete_ticker():
         return f"Ticker {ticker_to_delete} deleted from {current_list_name} successfully", 200
     except Exception as e:
         logging.exception(f"Failed to delete ticker {ticker_to_delete} from {current_list_name}")
-        return f"Failed to delete ticker {ticker_to_delete} from {current_list_name}: {e}", 500 
+        return f"Failed to delete ticker {ticker_to_delete} from {current_list_name}: {e}", 500
+
+@stock_bp.route("/get_analysis_summary", methods=["GET"])
+@login_required
+def get_analysis_summary():
+    """종목 분석 요약 정보 반환"""
+    current_list_name = session.get('current_stock_list', 'default')
+    current_date_str = datetime.now().strftime("%Y%m%d")
+    
+    try:
+        # 리스트 확인 (어드민은 모든 리스트, 일반사용자는 자신의 리스트만)
+        if current_user.is_administrator():
+            stock_list = StockList.query.filter_by(name=current_list_name).first()
+        else:
+            stock_list = StockList.query.filter_by(user_id=current_user.id, name=current_list_name).first()
+        
+        if not stock_list:
+            if current_user.is_administrator():
+                # 어드민은 빈 리스트 반환
+                return jsonify([])
+            else:
+                # 일반 사용자는 기본 리스트 생성 (중복 방지)
+                default_list = StockList.query.filter_by(user_id=current_user.id, is_default=True).first()
+                if not default_list:
+                    # 이름으로도 중복 체크
+                    existing_default = StockList.query.filter_by(
+                        user_id=current_user.id, 
+                        name='기본 관심종목'
+                    ).first()
+                    
+                    if existing_default:
+                        # 기존 리스트를 기본으로 설정
+                        existing_default.is_default = True
+                        db.session.commit()
+                        default_list = existing_default
+                    else:
+                        # 새로 생성
+                        default_list = StockList(
+                            name='기본 관심종목',
+                            description='기본 관심종목',
+                            user_id=current_user.id,
+                            is_default=True
+                        )
+                        db.session.add(default_list)
+                        db.session.commit()
+                stock_list = default_list
+                session['current_stock_list'] = default_list.name
+        
+        # 종목들 반환
+        stocks = Stock.query.filter_by(stock_list_id=stock_list.id).all()
+        summaries = [f"{stock.ticker} - {stock.name}" for stock in stocks]
+        
+        try:
+            # 요약 파일 저장
+            summary_file_path = os.path.join(SUMMARY_DIR, f"{stock_list.name}_summary_{current_date_str}.txt")
+            summary_content = '\n'.join(summaries)
+            safe_write_file(summary_file_path, summary_content)
+            
+            logging.info(f"Summary saved to {summary_file_path}")
+            return jsonify(summaries)
+        except Exception as e:
+            logging.error(f"Error saving summary file: {e}")
+            flash(f"요약 파일 저장 실패: {e}", "error")
+            return jsonify(summaries)
+        
+    except Exception as e:
+        logging.exception(f"Failed to get analysis summary for {current_list_name}")
+        return jsonify({"error": f"Failed to load analysis summary from {current_list_name}"}), 500 

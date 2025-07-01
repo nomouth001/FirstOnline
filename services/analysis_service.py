@@ -11,7 +11,7 @@ import google.generativeai as genai
 import requests
 from flask import render_template, current_app
 from config import ANALYSIS_DIR, DEBUG_DIR, GOOGLE_API_KEY, CHART_DIR, GEMINI_MODEL_VERSION
-from utils.file_manager import get_date_folder_path
+from utils.file_manager import get_date_folder_path, safe_write_file
 from models import _extract_summary_from_analysis
 import json
 import numpy as np
@@ -576,10 +576,14 @@ def analyze_ticker_internal_logic(ticker, analysis_html_path):
             monthly_ohlcv_data=monthly_ohlcv_data
         )
 
+        # 통일된 권한 처리 함수 import
+        from utils.file_manager import safe_write_file
+
         # --- ALL INDICATORS DEBUG OUTPUT ---
         # 현재 날짜를 YYYYMMDD 형식으로 가져오기
         current_date_str = datetime.now().strftime("%Y%m%d")
-        
+        debug_folder = os.path.join("static", "debug", current_date_str)
+
         # EMA 디버그 파일
         ema_debug_lines = []
         ema_debug_lines.append(f"[EMA DEBUG] Ticker: {ticker}\n")
@@ -596,10 +600,8 @@ def analyze_ticker_internal_logic(ticker, analysis_html_path):
         ema_debug_lines.append(f"AI receives - Daily: EMA5: {ema_daily_5:.2f}, EMA20: {ema_daily_20:.2f}, EMA40: {ema_daily_40:.2f}")
         ema_debug_lines.append(f"AI receives - Weekly: EMA5: {ema_weekly_5:.2f}, EMA20: {ema_weekly_20:.2f}, EMA40: {ema_weekly_40:.2f}")
         ema_debug_lines.append(f"AI receives - Monthly: EMA5: {ema_monthly_5:.2f}, EMA20: {ema_monthly_20:.2f}, EMA40: {ema_monthly_40:.2f}")
-        debug_folder = get_date_folder_path(DEBUG_DIR, current_date_str)
         ema_debug_path = os.path.join(debug_folder, f"{ticker}_ema_debug_{current_date_str}.txt")
-        with open(ema_debug_path, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(ema_debug_lines))
+        safe_write_file(ema_debug_path, '\n'.join(ema_debug_lines))
 
         # MACD 디버그 파일
         macd_debug_lines = []
@@ -618,8 +620,7 @@ def analyze_ticker_internal_logic(ticker, analysis_html_path):
         macd_debug_lines.append(f"AI receives - Weekly: MACD: {macd_line_weekly:.2f}, Signal: {macd_signal_weekly:.2f}, Hist: {macd_hist_weekly:.2f}")
         macd_debug_lines.append(f"AI receives - Monthly: MACD: {macd_line_monthly:.2f}, Signal: {macd_signal_monthly:.2f}, Hist: {macd_hist_monthly:.2f}")
         macd_debug_path = os.path.join(debug_folder, f"{ticker}_macd_debug_{current_date_str}.txt")
-        with open(macd_debug_path, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(macd_debug_lines))
+        safe_write_file(macd_debug_path, '\n'.join(macd_debug_lines))
 
         # 볼린저 밴드 디버그 파일
         bb_debug_lines = []
@@ -638,8 +639,7 @@ def analyze_ticker_internal_logic(ticker, analysis_html_path):
         bb_debug_lines.append(f"AI receives - Weekly: BB_Upper: {bb_upper_weekly:.2f}, BB_Lower: {bb_lower_weekly:.2f}, BB_MA: {bb_ma_weekly:.2f}")
         bb_debug_lines.append(f"AI receives - Monthly: BB_Upper: {bb_upper_monthly:.2f}, BB_Lower: {bb_lower_monthly:.2f}, BB_MA: {bb_ma_monthly:.2f}")
         bb_debug_path = os.path.join(debug_folder, f"{ticker}_bollinger_bands_debug_{current_date_str}.txt")
-        with open(bb_debug_path, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(bb_debug_lines))
+        safe_write_file(bb_debug_path, '\n'.join(bb_debug_lines))
 
         # 일목균형표 디버그 파일
         ichimoku_debug_lines = []
@@ -658,8 +658,7 @@ def analyze_ticker_internal_logic(ticker, analysis_html_path):
         ichimoku_debug_lines.append(f"AI receives - Weekly: Conv: {ichimoku_conv_weekly:.2f}, Base: {ichimoku_base_weekly:.2f}, SpanA: {ichimoku_spana_weekly:.2f}, SpanB: {ichimoku_spanb_weekly:.2f}, Lag: {ichimoku_lag_weekly:.2f}")
         ichimoku_debug_lines.append(f"AI receives - Monthly: Conv: {ichimoku_conv_monthly:.2f}, Base: {ichimoku_base_monthly:.2f}, SpanA: {ichimoku_spana_monthly:.2f}, SpanB: {ichimoku_spanb_monthly:.2f}, Lag: {ichimoku_lag_monthly:.2f}")
         ichimoku_debug_path = os.path.join(debug_folder, f"{ticker}_ichimoku_debug_{current_date_str}.txt")
-        with open(ichimoku_debug_path, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(ichimoku_debug_lines))
+        safe_write_file(ichimoku_debug_path, '\n'.join(ichimoku_debug_lines))
 
         # 거래량 디버그 파일
         volume_debug_lines = []
@@ -678,8 +677,7 @@ def analyze_ticker_internal_logic(ticker, analysis_html_path):
         volume_debug_lines.append(f"AI receives - Weekly: Volume: {volume_weekly:,.0f}")
         volume_debug_lines.append(f"AI receives - Monthly: Volume: {volume_monthly:,.0f}")
         volume_debug_path = os.path.join(debug_folder, f"{ticker}_volume_debug_{current_date_str}.txt")
-        with open(volume_debug_path, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(volume_debug_lines))
+        safe_write_file(volume_debug_path, '\n'.join(volume_debug_lines))
 
         # OHLCV 데이터 디버그 파일
         ohlcv_debug_lines = []
@@ -698,10 +696,8 @@ def analyze_ticker_internal_logic(ticker, analysis_html_path):
         ohlcv_debug_lines.append(monthly_ohlcv_data)
         ohlcv_debug_lines.append("\n" + "=" * 50)
         ohlcv_debug_lines.append(f"총 데이터 크기: 일봉 {len(daily_ohlcv_data_points)}개, 주봉 {len(weekly_ohlcv_data_points)}개, 월봉 {len(monthly_ohlcv_data_points)}개")
-        
         ohlcv_debug_path = os.path.join(debug_folder, f"{ticker}_ohlcv_debug_{current_date_str}.txt")
-        with open(ohlcv_debug_path, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(ohlcv_debug_lines))
+        safe_write_file(ohlcv_debug_path, '\n'.join(ohlcv_debug_lines))
 
         # AI 프롬프트 전체 내용 디버그 파일 저장
         prompt_debug_lines = []
@@ -713,10 +709,8 @@ def analyze_ticker_internal_logic(ticker, analysis_html_path):
         prompt_debug_lines.append("")
         prompt_debug_lines.append("=" * 80)
         prompt_debug_lines.append(f"Total prompt length: {len(common_prompt)} characters")
-        
         prompt_debug_path = os.path.join(debug_folder, f"{ticker}_ai_prompt_debug_{current_date_str}.txt")
-        with open(prompt_debug_path, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(prompt_debug_lines))
+        safe_write_file(prompt_debug_path, '\n'.join(prompt_debug_lines))
 
     except Exception as e:
         # 데이터 로드 또는 지표 계산 실패 시, AI 분석을 시도하지 않음
@@ -752,50 +746,12 @@ def analyze_ticker_internal_logic(ticker, analysis_html_path):
     # 원래 경로(static/analysis)에 직접 저장 + 권한 문제 해결
     logging.info(f"[{ticker}] Saving analysis to original static directory...")
     try:
-        import tempfile
-        import shutil
-        import subprocess
-        
         # 1. 분석 텍스트를 원래 경로에 저장
         if gemini_succeeded:
-            # 임시 파일에 분석 텍스트 작성
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False, encoding='utf-8') as temp_text:
-                temp_text.write(analysis_gemini)
-                temp_text_path = temp_text.name
-            
             analysis_text_path = os.path.join(ANALYSIS_DIR, f"{ticker}_analysis_{current_date_str}.txt")
-            
-            # analysis 디렉토리 생성 및 권한 확보
-            try:
-                os.makedirs(ANALYSIS_DIR, exist_ok=True)
-            except PermissionError:
-                try:
-                    subprocess.run(['/usr/bin/sudo', 'mkdir', '-p', ANALYSIS_DIR], check=True, capture_output=True)
-                    subprocess.run(['/usr/bin/sudo', 'chown', 'ubuntu:ubuntu', ANALYSIS_DIR], check=True, capture_output=True)
-                    subprocess.run(['/usr/bin/sudo', 'chmod', '755', ANALYSIS_DIR], check=True, capture_output=True)
-                    logging.info(f"sudo로 분석 디렉토리 생성: {ANALYSIS_DIR}")
-                except Exception as sudo_error:
-                    logging.error(f"sudo 분석 디렉토리 생성 실패: {sudo_error}")
-                    raise
-            
-            # 임시 파일을 최종 경로로 이동
-            try:
-                shutil.move(temp_text_path, analysis_text_path)
-                os.chmod(analysis_text_path, 0o644)
-                logging.info(f"[{ticker}] Analysis text saved to original path: {analysis_text_path}")
-            except PermissionError:
-                try:
-                    subprocess.run(['/usr/bin/sudo', 'cp', temp_text_path, analysis_text_path], check=True, capture_output=True)
-                    subprocess.run(['/usr/bin/sudo', 'chown', 'ubuntu:ubuntu', analysis_text_path], check=True, capture_output=True)
-                    subprocess.run(['/usr/bin/sudo', 'chmod', '644', analysis_text_path], check=True, capture_output=True)
-                    os.unlink(temp_text_path)
-                    logging.info(f"[{ticker}] Analysis text saved with sudo: {analysis_text_path}")
-                except Exception as sudo_error:
-                    logging.error(f"sudo 분석 텍스트 저장 실패: {sudo_error}")
-                    raise
+            safe_write_file(analysis_text_path, analysis_gemini)
         
         # 2. HTML 파일을 원래 경로에 저장
-        # 임시 파일에 HTML 생성
         if current_app:
             rendered_html = render_template("charts.html", ticker=ticker, charts=charts, date=display_date, analysis_gemini=analysis_gemini)
         else:
@@ -803,25 +759,7 @@ def analyze_ticker_internal_logic(ticker, analysis_html_path):
             with app.app_context():
                 rendered_html = render_template("charts.html", ticker=ticker, charts=charts, date=display_date, analysis_gemini=analysis_gemini)
         
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False, encoding='utf-8') as temp_html:
-            temp_html.write(rendered_html)
-            temp_html_path = temp_html.name
-        
-        # 임시 HTML 파일을 최종 경로로 이동
-        try:
-            shutil.move(temp_html_path, analysis_html_path)
-            os.chmod(analysis_html_path, 0o644)
-            logging.info(f"[{ticker}] HTML file saved to original path: {analysis_html_path}")
-        except PermissionError:
-            try:
-                subprocess.run(['/usr/bin/sudo', 'cp', temp_html_path, analysis_html_path], check=True, capture_output=True)
-                subprocess.run(['/usr/bin/sudo', 'chown', 'ubuntu:ubuntu', analysis_html_path], check=True, capture_output=True)
-                subprocess.run(['/usr/bin/sudo', 'chmod', '644', analysis_html_path], check=True, capture_output=True)
-                os.unlink(temp_html_path)
-                logging.info(f"[{ticker}] HTML file saved with sudo: {analysis_html_path}")
-            except Exception as sudo_error:
-                logging.error(f"sudo HTML 파일 저장 실패: {sudo_error}")
-                raise
+        safe_write_file(analysis_html_path, rendered_html)
                 
     except Exception as e:
         logging.error(f"[{ticker}] Failed to save analysis files: {e}")

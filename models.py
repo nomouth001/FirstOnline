@@ -8,6 +8,8 @@ from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy.orm import relationship
 import re
+from utils.file_manager import safe_write_file
+import io
 
 # 상수 정의
 STOCK_LISTS_DIR = 'stock_lists'
@@ -189,9 +191,15 @@ def ensure_stock_list_exists(list_name):
     """주식 리스트 파일이 존재하지 않으면 생성합니다."""
     path = get_stock_list_path(list_name)
     if not os.path.exists(path):
-        with open(path, "w", newline="", encoding='utf-8') as f:
-            writer = csv.writer(f)
-            writer.writerow(["ticker", "name"])
+        # CSV 문자열 생성
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["ticker", "name"])
+        csv_content = output.getvalue()
+        output.close()
+        
+        # safe_write_file로 저장
+        safe_write_file(path, csv_content)
 
 def _extract_summary_from_analysis(analysis_text, num_sentences=3):
     """

@@ -749,66 +749,79 @@ def analyze_ticker_internal_logic(ticker, analysis_html_path):
         summary_gemini = _extract_summary_from_analysis(analysis_gemini)
         logging.info(f"[{ticker}] Summary extracted successfully")
 
-    # Flask instance 디렉토리 사용으로 권한 문제 완전 해결
-    logging.info(f"[{ticker}] Saving analysis using Flask instance directory...")
+    # 원래 경로(static/analysis)에 직접 저장 + 권한 문제 해결
+    logging.info(f"[{ticker}] Saving analysis to original static directory...")
     try:
+        import tempfile
         import shutil
+        import subprocess
         
-        # 1. Flask instance 디렉토리 사용 (권한 문제 없음)
-        if current_app:
-            instance_analysis_dir = os.path.join(current_app.instance_path, 'analysis')
-        else:
-            # app_context 외부에서 호출될 경우 홈 디렉토리 사용
-            instance_analysis_dir = os.path.join(os.path.expanduser('~'), 'newsletter_analysis')
-        
-        # 2. instance 디렉토리 생성 (권한 문제 없음)
-        os.makedirs(instance_analysis_dir, exist_ok=True)
-        
-        # 3. 분석 텍스트를 instance 디렉토리에 저장
+        # 1. 분석 텍스트를 원래 경로에 저장
         if gemini_succeeded:
-            instance_text_path = os.path.join(instance_analysis_dir, f"{ticker}_analysis_{current_date_str}.txt")
-            with open(instance_text_path, 'w', encoding='utf-8') as f:
-                f.write(analysis_gemini)
+            # 임시 파일에 분석 텍스트 작성
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False, encoding='utf-8') as temp_text:
+                temp_text.write(analysis_gemini)
+                temp_text_path = temp_text.name
             
-            # static 디렉토리로 복사 시도 (웹 접근 가능하도록)
+            analysis_text_path = os.path.join(analysis_folder, f"{ticker}_analysis_{current_date_str}.txt")
+            
+            # analysis 디렉토리 생성 및 권한 확보
             try:
                 os.makedirs(analysis_folder, exist_ok=True)
-                static_text_path = os.path.join(analysis_folder, f"{ticker}_analysis_{current_date_str}.txt")
-                shutil.copy2(instance_text_path, static_text_path)
-                logging.info(f"[{ticker}] Analysis text saved to both instance and static: {static_text_path}")
             except PermissionError:
-                logging.info(f"[{ticker}] Analysis text saved to instance only: {instance_text_path}")
+                try:
+                    subprocess.run(['sudo', 'mkdir', '-p', analysis_folder], check=True, capture_output=True)
+                    subprocess.run(['sudo', 'chown', 'ubuntu:ubuntu', analysis_folder], check=True, capture_output=True)
+                    subprocess.run(['sudo', 'chmod', '755', analysis_folder], check=True, capture_output=True)
+                    logging.info(f"sudo로 분석 디렉토리 생성: {analysis_folder}")
+                except Exception as sudo_error:
+                    logging.error(f"sudo 분석 디렉토리 생성 실패: {sudo_error}")
+                    raise
+            
+            # 임시 파일을 최종 경로로 이동
+            try:
+                shutil.move(temp_text_path, analysis_text_path)
+                os.chmod(analysis_text_path, 0o644)
+                logging.info(f"[{ticker}] Analysis text saved to original path: {analysis_text_path}")
+            except PermissionError:
+                try:
+                    subprocess.run(['sudo', 'cp', temp_text_path, analysis_text_path], check=True, capture_output=True)
+                    subprocess.run(['sudo', 'chown', 'ubuntu:ubuntu', analysis_text_path], check=True, capture_output=True)
+                    subprocess.run(['sudo', 'chmod', '644', analysis_text_path], check=True, capture_output=True)
+                    os.unlink(temp_text_path)
+                    logging.info(f"[{ticker}] Analysis text saved with sudo: {analysis_text_path}")
+                except Exception as sudo_error:
+                    logging.error(f"sudo 분석 텍스트 저장 실패: {sudo_error}")
+                    raise
         
-        # 4. HTML 파일도 instance 디렉토리에 저장
-        instance_html_path = os.path.join(instance_analysis_dir, f"{ticker}_{current_date_str}.html")
-        
+        # 2. HTML 파일을 원래 경로에 저장
+        # 임시 파일에 HTML 생성
         if current_app:
-            # 이미 애플리케이션 컨텍스트 내에 있는 경우
             rendered_html = render_template("charts.html", ticker=ticker, charts=charts, date=display_date, analysis_gemini=analysis_gemini)
-            with open(instance_html_path, 'w', encoding='utf-8') as f:
-                f.write(rendered_html)
-            logging.info(f"[{ticker}] HTML analysis file saved to instance")
         else:
-            # 애플리케이션 컨텍스트 외부에 있는 경우
             from app import app
             with app.app_context():
                 rendered_html = render_template("charts.html", ticker=ticker, charts=charts, date=display_date, analysis_gemini=analysis_gemini)
-                with open(instance_html_path, 'w', encoding='utf-8') as f:
-                    f.write(rendered_html)
-                logging.info(f"[{ticker}] HTML analysis file saved to instance with app_context")
         
-        # 5. static 디렉토리로 HTML 복사 시도
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False, encoding='utf-8') as temp_html:
+            temp_html.write(rendered_html)
+            temp_html_path = temp_html.name
+        
+        # 임시 HTML 파일을 최종 경로로 이동
         try:
-            shutil.copy2(instance_html_path, analysis_html_path)
-            logging.info(f"[{ticker}] HTML file copied to static directory: {analysis_html_path}")
+            shutil.move(temp_html_path, analysis_html_path)
+            os.chmod(analysis_html_path, 0o644)
+            logging.info(f"[{ticker}] HTML file saved to original path: {analysis_html_path}")
         except PermissionError:
-            # 복사 실패 시 홈 디렉토리에 대체 경로 생성
-            home_analysis_dir = os.path.join(os.path.expanduser('~'), 'newsletter_static', 'analysis')
-            os.makedirs(home_analysis_dir, exist_ok=True)
-            
-            home_html_path = os.path.join(home_analysis_dir, f"{ticker}_{current_date_str}.html")
-            shutil.copy2(instance_html_path, home_html_path)
-            logging.info(f"[{ticker}] HTML file saved to home directory: {home_html_path}")
+            try:
+                subprocess.run(['sudo', 'cp', temp_html_path, analysis_html_path], check=True, capture_output=True)
+                subprocess.run(['sudo', 'chown', 'ubuntu:ubuntu', analysis_html_path], check=True, capture_output=True)
+                subprocess.run(['sudo', 'chmod', '644', analysis_html_path], check=True, capture_output=True)
+                os.unlink(temp_html_path)
+                logging.info(f"[{ticker}] HTML file saved with sudo: {analysis_html_path}")
+            except Exception as sudo_error:
+                logging.error(f"sudo HTML 파일 저장 실패: {sudo_error}")
+                raise
                 
     except Exception as e:
         logging.error(f"[{ticker}] Failed to save analysis files: {e}")

@@ -355,60 +355,54 @@ def generate(df_input, freq_label, suffix, ticker):
         if handles:
             ax.legend(handles, labels, loc="upper left", fontsize="small")
 
-    # Flask instance 디렉토리 사용 방식으로 권한 문제 완전 해결
+    # 원래 경로(static/charts)에 직접 저장 + 권한 문제 해결
     try:
         import tempfile
         import shutil
         import stat
-        from flask import current_app
+        import subprocess
         
-        # 1. Flask instance 디렉토리 사용 (권한 문제 없음)
-        if current_app:
-            instance_charts_dir = os.path.join(current_app.instance_path, 'charts', current_date_str)
-        else:
-            # app_context 외부에서 호출될 경우 홈 디렉토리 사용
-            instance_charts_dir = os.path.join(os.path.expanduser('~'), 'newsletter_charts', current_date_str)
+        # 1. 원래 경로 설정
+        date_folder = get_date_folder_path(CHART_DIR, current_date_str)
+        final_path = os.path.join(date_folder, f"{ticker}_{suffix}_{current_date_str}.png")
         
-        # 2. instance 디렉토리 생성 (권한 문제 없음)
-        os.makedirs(instance_charts_dir, exist_ok=True)
+        # 2. 임시 파일에 차트 생성 (권한 문제 없음)
+        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as temp_file:
+            temp_path = temp_file.name
         
-        # 3. instance 디렉토리에 차트 파일 생성
-        instance_path = os.path.join(instance_charts_dir, f"{ticker}_{suffix}_{current_date_str}.png")
-        fig.savefig(instance_path, bbox_inches="tight")
+        fig.savefig(temp_path, bbox_inches="tight")
         plt.close('all')
         
-        # 4. static 디렉토리로 심볼릭 링크 생성 (웹 접근 가능하도록)
-        static_date_folder = get_date_folder_path(CHART_DIR, current_date_str)
-        static_path = os.path.join(static_date_folder, f"{ticker}_{suffix}_{current_date_str}.png")
-        
+        # 3. static 디렉토리 생성 및 권한 확보
         try:
-            # static 디렉토리가 없으면 생성 시도
-            os.makedirs(static_date_folder, exist_ok=True)
-            
-            # 기존 파일이 있으면 삭제
-            if os.path.exists(static_path):
-                os.remove(static_path)
-            
-            # 심볼릭 링크 생성 (실제 파일은 instance에, 웹 접근은 static으로)
-            os.symlink(instance_path, static_path)
-            logging.info(f"차트 파일 생성 및 심볼릭 링크 성공: {static_path} -> {instance_path}")
-            
-        except (PermissionError, OSError) as symlink_error:
-            # 심볼릭 링크 실패 시 복사로 대체
+            os.makedirs(date_folder, exist_ok=True)
+        except PermissionError:
+            # 디렉토리 생성 권한이 없으면 sudo 사용
             try:
-                # static 디렉토리를 홈 디렉토리에 새로 생성
-                home_static_dir = os.path.join(os.path.expanduser('~'), 'newsletter_static', 'charts', current_date_str)
-                os.makedirs(home_static_dir, exist_ok=True)
-                
-                home_static_path = os.path.join(home_static_dir, f"{ticker}_{suffix}_{current_date_str}.png")
-                shutil.copy2(instance_path, home_static_path)
-                
-                logging.info(f"차트 파일 홈 디렉토리에 복사: {home_static_path}")
-                return home_static_path
-                
-            except Exception as copy_error:
-                logging.warning(f"파일 복사도 실패, instance 경로 반환: {copy_error}")
-                return instance_path
+                subprocess.run(['sudo', 'mkdir', '-p', date_folder], check=True, capture_output=True)
+                subprocess.run(['sudo', 'chown', 'ubuntu:ubuntu', date_folder], check=True, capture_output=True)
+                subprocess.run(['sudo', 'chmod', '755', date_folder], check=True, capture_output=True)
+                logging.info(f"sudo로 디렉토리 생성: {date_folder}")
+            except Exception as sudo_error:
+                logging.error(f"sudo 디렉토리 생성 실패: {sudo_error}")
+                raise
+        
+        # 4. 임시 파일을 최종 경로로 이동
+        try:
+            shutil.move(temp_path, final_path)
+            os.chmod(final_path, 0o644)  # 644 권한 설정
+            logging.info(f"차트 파일 저장 성공: {final_path}")
+        except PermissionError:
+            # 권한 문제 시 sudo로 복사 후 권한 변경
+            try:
+                subprocess.run(['sudo', 'cp', temp_path, final_path], check=True, capture_output=True)
+                subprocess.run(['sudo', 'chown', 'ubuntu:ubuntu', final_path], check=True, capture_output=True)
+                subprocess.run(['sudo', 'chmod', '644', final_path], check=True, capture_output=True)
+                os.unlink(temp_path)  # 임시 파일 삭제
+                logging.info(f"sudo로 차트 파일 저장: {final_path}")
+            except Exception as sudo_error:
+                logging.error(f"sudo 파일 저장 실패: {sudo_error}")
+                raise
         
         # 5. 디버그 정보도 동일한 방식으로 저장
         if freq_label == "Daily":
@@ -417,16 +411,28 @@ def generate(df_input, freq_label, suffix, ticker):
                 debug_content += "[Daily EMA for Chart]\n"
                 debug_content += '\n'.join(daily_ema_data)
                 
-                debug_instance_path = os.path.join(instance_charts_dir, f"{ticker}_ema_debug_{current_date_str}.txt")
-                with open(debug_instance_path, 'w', encoding='utf-8') as f:
-                    f.write(debug_content)
+                # 임시 디버그 파일 생성
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False, encoding='utf-8') as temp_debug:
+                    temp_debug.write(debug_content)
+                    temp_debug_path = temp_debug.name
                 
-                logging.info(f"디버그 파일 저장: {debug_instance_path}")
+                debug_path = os.path.join(date_folder, f"{ticker}_ema_debug_{current_date_str}.txt")
+                
+                try:
+                    shutil.move(temp_debug_path, debug_path)
+                    os.chmod(debug_path, 0o644)
+                except PermissionError:
+                    subprocess.run(['sudo', 'cp', temp_debug_path, debug_path], check=True, capture_output=True)
+                    subprocess.run(['sudo', 'chown', 'ubuntu:ubuntu', debug_path], check=True, capture_output=True)
+                    subprocess.run(['sudo', 'chmod', '644', debug_path], check=True, capture_output=True)
+                    os.unlink(temp_debug_path)
+                
+                logging.info(f"디버그 파일 저장: {debug_path}")
                 
             except Exception as debug_error:
                 logging.warning(f"디버그 파일 저장 실패 (무시): {debug_error}")
         
-        return static_path
+        return final_path
         
     except Exception as e:
         logging.error(f"차트 저장 실패: {e}")

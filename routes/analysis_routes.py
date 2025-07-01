@@ -286,9 +286,50 @@ def generate_all_charts_and_analysis(list_name):
 
         # 모든 종목 처리 후 요약 정보를 JSON 파일로 저장
         try:
-            with open(summary_file_path, 'w', encoding='utf-8') as f:
-                json.dump(all_summaries, f, ensure_ascii=False, indent=4)
-            logging.info(f"All summaries for list '{list_name}' saved to {summary_file_path}")
+            import tempfile
+            import shutil
+            import subprocess
+            
+            # 임시 파일에 JSON 데이터 작성
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False, encoding='utf-8') as temp_file:
+                json.dump(all_summaries, temp_file, ensure_ascii=False, indent=4)
+                temp_file_path = temp_file.name
+            
+            # summaries 디렉토리 생성 및 권한 확보
+            summary_dir = os.path.dirname(summary_file_path)
+            try:
+                os.makedirs(summary_dir, exist_ok=True)
+            except PermissionError:
+                try:
+                    subprocess.run(['/usr/bin/sudo', 'mkdir', '-p', summary_dir], check=True, capture_output=True)
+                    subprocess.run(['/usr/bin/sudo', 'chown', 'ubuntu:ubuntu', summary_dir], check=True, capture_output=True)
+                    subprocess.run(['/usr/bin/sudo', 'chmod', '755', summary_dir], check=True, capture_output=True)
+                    logging.info(f"sudo로 요약 디렉토리 생성: {summary_dir}")
+                except Exception as sudo_error:
+                    logging.error(f"sudo 요약 디렉토리 생성 실패: {sudo_error}")
+                    raise
+            
+            # 임시 파일을 최종 경로로 이동
+            try:
+                shutil.move(temp_file_path, summary_file_path)
+                os.chmod(summary_file_path, 0o644)
+                logging.info(f"All summaries for list '{list_name}' saved to {summary_file_path}")
+            except PermissionError:
+                try:
+                    subprocess.run(['/usr/bin/sudo', 'cp', temp_file_path, summary_file_path], check=True, capture_output=True)
+                    subprocess.run(['/usr/bin/sudo', 'chown', 'ubuntu:ubuntu', summary_file_path], check=True, capture_output=True)
+                    subprocess.run(['/usr/bin/sudo', 'chmod', '644', summary_file_path], check=True, capture_output=True)
+                    os.unlink(temp_file_path)
+                    logging.info(f"All summaries for list '{list_name}' saved with sudo: {summary_file_path}")
+                except Exception as sudo_error:
+                    logging.error(f"sudo 요약 파일 저장 실패: {sudo_error}")
+                    # 임시 파일 정리
+                    try:
+                        os.unlink(temp_file_path)
+                    except:
+                        pass
+                    raise
+                    
         except Exception as e:
             logging.exception(f"Failed to save summaries for list '{list_name}'")
             return jsonify({"error": f"Failed to save summaries: {e}", "individual_results": results}), 500

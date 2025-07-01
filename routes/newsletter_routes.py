@@ -274,32 +274,52 @@ def send_test_multi():
     try:
         from models import StockList
         
+        logger.info(f"=== 통합 테스트 발송 시작 - 사용자: {current_user.id} ===")
+        
         # 사용자의 모든 종목 리스트 가져오기
         stock_lists = StockList.query.filter_by(user_id=current_user.id).all()
+        logger.info(f"사용자의 종목 리스트 개수: {len(stock_lists) if stock_lists else 0}")
+        
         if not stock_lists:
             return jsonify({'success': False, 'message': '종목 리스트가 없습니다.'})
         
         # 멀티 리스트 뉴스레터 콘텐츠 생성
+        logger.info("멀티 리스트 뉴스레터 콘텐츠 생성 시작...")
         content = newsletter_service.generate_multi_list_newsletter_content(current_user, stock_lists)
+        
         if not content:
+            logger.error("멀티 리스트 뉴스레터 콘텐츠 생성 실패")
             return jsonify({'success': False, 'message': '뉴스레터 콘텐츠를 생성할 수 없습니다. 먼저 종목 분석을 실행해주세요.'})
         
-        # 테스트 이메일 발송
-        subject = f"📧 통합 테스트 뉴스레터 - {current_user.get_full_name()}님 ({content['list_count']}개 리스트)"
-        success, result = email_service.send_newsletter(
-            current_user, subject, content['html'], content['text']
-        )
+        logger.info(f"콘텐츠 생성 성공 - 종목 수: {content.get('stock_count', 0)}, 리스트 수: {content.get('list_count', 0)}")
+        logger.info(f"콘텐츠 키들: {list(content.keys())}")
         
-        if success:
-            return jsonify({
-                'success': True, 
-                'message': f'통합 테스트 뉴스레터가 발송되었습니다.',
-                'stock_count': content['stock_count'],
-                'list_count': content['list_count']
-            })
-        else:
-            return jsonify({'success': False, 'message': f'발송 실패: {result}'})
+        # 테스트 이메일 발송
+        try:
+            subject = f"📧 통합 테스트 뉴스레터 - {current_user.get_full_name()}님 ({content['list_count']}개 리스트)"
+            logger.info(f"이메일 제목 생성 완료: {subject}")
+            
+            logger.info("email_service.send_newsletter 호출 시작...")
+            success, result = email_service.send_newsletter(
+                current_user, subject, content['html'], content['text']
+            )
+            
+            logger.info(f"email_service.send_newsletter 결과 - 성공: {success}, 결과: {result}")
+            
+            if success:
+                return jsonify({
+                    'success': True, 
+                    'message': f'통합 테스트 뉴스레터가 발송되었습니다.',
+                    'stock_count': content['stock_count'],
+                    'list_count': content['list_count']
+                })
+            else:
+                return jsonify({'success': False, 'message': f'발송 실패: {result}'})
+                
+        except Exception as email_error:
+            logger.error(f"이메일 발송 단계에서 오류: {email_error}", exc_info=True)
+            return jsonify({'success': False, 'message': f'이메일 발송 오류: {str(email_error)}'})
         
     except Exception as e:
-        logger.error(f"통합 테스트 뉴스레터 발송 오류: {e}")
+        logger.error(f"통합 테스트 뉴스레터 발송 오류: {e}", exc_info=True)
         return jsonify({'success': False, 'message': f'오류 발생: {str(e)}'}) 

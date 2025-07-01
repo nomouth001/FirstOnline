@@ -323,8 +323,8 @@ def delete_ticker():
             
             if ticker_to_delete in summaries:
                 del summaries[ticker_to_delete]
-                with open(summary_file_path, 'w', encoding='utf-8') as f:
-                    json.dump(summaries, f, ensure_ascii=False, indent=4)
+                json_content = json.dumps(summaries, ensure_ascii=False, indent=4)
+                safe_write_file(summary_file_path, json_content)
 
         return f"Ticker {ticker_to_delete} deleted from {current_list_name} successfully", 200
     except Exception as e:

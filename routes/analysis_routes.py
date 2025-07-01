@@ -12,7 +12,7 @@ from config import ANALYSIS_DIR, MULTI_SUMMARY_DIR, CHART_GENERATION_TIMEOUT, AI
 from utils.timeout_utils import safe_chart_generation, safe_ai_analysis
 import time
 import glob
-from utils.file_manager import get_date_folder_path
+from utils.file_manager import get_date_folder_path, safe_write_file
 
 # Blueprint 생성
 analysis_bp = Blueprint('analysis', __name__)
@@ -286,49 +286,9 @@ def generate_all_charts_and_analysis(list_name):
 
         # 모든 종목 처리 후 요약 정보를 JSON 파일로 저장
         try:
-            import tempfile
-            import shutil
-            import subprocess
-            
-            # 임시 파일에 JSON 데이터 작성
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False, encoding='utf-8') as temp_file:
-                json.dump(all_summaries, temp_file, ensure_ascii=False, indent=4)
-                temp_file_path = temp_file.name
-            
-            # summaries 디렉토리 생성 및 권한 확보
-            summary_dir = os.path.dirname(summary_file_path)
-            try:
-                os.makedirs(summary_dir, exist_ok=True)
-            except PermissionError:
-                try:
-                    subprocess.run(['/usr/bin/sudo', 'mkdir', '-p', summary_dir], check=True, capture_output=True)
-                    subprocess.run(['/usr/bin/sudo', 'chown', 'ubuntu:ubuntu', summary_dir], check=True, capture_output=True)
-                    subprocess.run(['/usr/bin/sudo', 'chmod', '755', summary_dir], check=True, capture_output=True)
-                    logging.info(f"sudo로 요약 디렉토리 생성: {summary_dir}")
-                except Exception as sudo_error:
-                    logging.error(f"sudo 요약 디렉토리 생성 실패: {sudo_error}")
-                    raise
-            
-            # 임시 파일을 최종 경로로 이동
-            try:
-                shutil.move(temp_file_path, summary_file_path)
-                os.chmod(summary_file_path, 0o644)
-                logging.info(f"All summaries for list '{list_name}' saved to {summary_file_path}")
-            except PermissionError:
-                try:
-                    subprocess.run(['/usr/bin/sudo', 'cp', temp_file_path, summary_file_path], check=True, capture_output=True)
-                    subprocess.run(['/usr/bin/sudo', 'chown', 'ubuntu:ubuntu', summary_file_path], check=True, capture_output=True)
-                    subprocess.run(['/usr/bin/sudo', 'chmod', '644', summary_file_path], check=True, capture_output=True)
-                    os.unlink(temp_file_path)
-                    logging.info(f"All summaries for list '{list_name}' saved with sudo: {summary_file_path}")
-                except Exception as sudo_error:
-                    logging.error(f"sudo 요약 파일 저장 실패: {sudo_error}")
-                    # 임시 파일 정리
-                    try:
-                        os.unlink(temp_file_path)
-                    except:
-                        pass
-                    raise
+            json_content = json.dumps(all_summaries, ensure_ascii=False, indent=4)
+            safe_write_file(summary_file_path, json_content)
+            logging.info(f"All summaries for list '{list_name}' saved to {summary_file_path}")
                     
         except Exception as e:
             logging.exception(f"Failed to save summaries for list '{list_name}'")
@@ -588,8 +548,8 @@ def generate_multiple_lists_analysis():
                 # 개별 리스트 요약 저장
                 summary_file_path = get_analysis_summary_path(list_name)
                 try:
-                    with open(summary_file_path, 'w', encoding='utf-8') as f:
-                        json.dump(list_summaries, f, ensure_ascii=False, indent=4)
+                    json_content = json.dumps(list_summaries, ensure_ascii=False, indent=4)
+                    safe_write_file(summary_file_path, json_content)
                     logging.info(f"Summaries for list '{list_name}' saved to {summary_file_path}")
                 except Exception as e:
                     logging.exception(f"Failed to save summaries for list '{list_name}'")
@@ -872,8 +832,8 @@ def get_multiple_lists_summaries():
             "created_at": datetime.now().isoformat()
         }
         
-        with open(file_path, 'w', encoding='utf-8') as f:
-            json.dump(file_data, f, ensure_ascii=False, indent=4)
+        json_content = json.dumps(file_data, ensure_ascii=False, indent=4)
+        safe_write_file(file_path, json_content)
         
         logging.info(f"Multi summary data saved to file: {file_path}")
         

@@ -2,7 +2,7 @@ import os
 import logging
 from datetime import datetime
 from config import DEBUG_DIR
-from utils.file_manager import get_date_folder_path
+from utils.file_manager import get_date_folder_path, safe_write_file
 
 def create_debug_files(ticker, daily_df, weekly_df, monthly_df, daily_data_points, weekly_data_points, monthly_data_points):
     """모든 지표에 대한 디버그 파일을 생성합니다."""
@@ -48,8 +48,7 @@ def create_ema_debug_file(ticker, daily_df, weekly_df, monthly_df, daily_data_po
     # 날짜별 폴더 경로 사용
     debug_folder = get_date_folder_path(DEBUG_DIR, current_date_str)
     ema_debug_path = os.path.join(debug_folder, f"{ticker}_ema_debug_{current_date_str}.txt")
-    with open(ema_debug_path, 'w', encoding='utf-8') as f:
-        f.write('\n'.join(ema_debug_lines))
+    safe_write_file(ema_debug_path, '\n'.join(ema_debug_lines))
 
 def create_macd_debug_file(ticker, daily_df, weekly_df, monthly_df, daily_data_points, weekly_data_points, monthly_data_points, current_date_str):
     """MACD 디버그 파일을 생성합니다."""
@@ -73,8 +72,7 @@ def create_macd_debug_file(ticker, daily_df, weekly_df, monthly_df, daily_data_p
     # 날짜별 폴더 경로 사용
     debug_folder = get_date_folder_path(DEBUG_DIR, current_date_str)
     macd_debug_path = os.path.join(debug_folder, f"{ticker}_macd_debug_{current_date_str}.txt")
-    with open(macd_debug_path, 'w', encoding='utf-8') as f:
-        f.write('\n'.join(macd_debug_lines))
+    safe_write_file(macd_debug_path, '\n'.join(macd_debug_lines))
 
 def create_bollinger_debug_file(ticker, daily_df, weekly_df, monthly_df, daily_data_points, weekly_data_points, monthly_data_points, current_date_str):
     """볼린저 밴드 디버그 파일을 생성합니다."""
@@ -98,8 +96,7 @@ def create_bollinger_debug_file(ticker, daily_df, weekly_df, monthly_df, daily_d
     # 날짜별 폴더 경로 사용
     debug_folder = get_date_folder_path(DEBUG_DIR, current_date_str)
     bb_debug_path = os.path.join(debug_folder, f"{ticker}_bollinger_bands_debug_{current_date_str}.txt")
-    with open(bb_debug_path, 'w', encoding='utf-8') as f:
-        f.write('\n'.join(bb_debug_lines))
+    safe_write_file(bb_debug_path, '\n'.join(bb_debug_lines))
 
 def create_ichimoku_debug_file(ticker, daily_df, weekly_df, monthly_df, daily_data_points, weekly_data_points, monthly_data_points, current_date_str):
     """일목균형표 디버그 파일을 생성합니다."""
@@ -123,5 +120,4 @@ def create_ichimoku_debug_file(ticker, daily_df, weekly_df, monthly_df, daily_da
     # 날짜별 폴더 경로 사용
     debug_folder = get_date_folder_path(DEBUG_DIR, current_date_str)
     ichimoku_debug_path = os.path.join(debug_folder, f"{ticker}_ichimoku_debug_{current_date_str}.txt")
-    with open(ichimoku_debug_path, 'w', encoding='utf-8') as f:
-        f.write('\n'.join(ichimoku_debug_lines)) 
+    safe_write_file(ichimoku_debug_path, '\n'.join(ichimoku_debug_lines)) 

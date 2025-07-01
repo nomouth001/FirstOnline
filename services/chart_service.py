@@ -416,7 +416,16 @@ def generate(df_input, freq_label, suffix, ticker):
                     temp_debug.write(debug_content)
                     temp_debug_path = temp_debug.name
                 
-                debug_path = os.path.join(date_folder, f"{ticker}_ema_debug_{current_date_str}.txt")
+                debug_date_folder = os.path.join("static", "debug", current_date_str)
+                debug_path = os.path.join(debug_date_folder, f"{ticker}_ema_debug_{current_date_str}.txt")
+                
+                # 디버그 디렉토리 생성
+                try:
+                    os.makedirs(debug_date_folder, exist_ok=True)
+                except PermissionError:
+                    subprocess.run(['/usr/bin/sudo', 'mkdir', '-p', debug_date_folder], check=True, capture_output=True)
+                    subprocess.run(['/usr/bin/sudo', 'chown', 'ubuntu:ubuntu', debug_date_folder], check=True, capture_output=True)
+                    subprocess.run(['/usr/bin/sudo', 'chmod', '755', debug_date_folder], check=True, capture_output=True)
                 
                 try:
                     shutil.move(temp_debug_path, debug_path)

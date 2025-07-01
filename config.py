@@ -17,8 +17,10 @@ if os.getenv('DATABASE_URL'):
     # Render.com 배포용 (PostgreSQL)
     SQLALCHEMY_DATABASE_URI = os.getenv('DATABASE_URL').replace('postgres://', 'postgresql://')
 else:
-    # 로컬 개발용 (SQLite)
-    SQLALCHEMY_DATABASE_URI = os.getenv('SQLALCHEMY_DATABASE_URI', 'sqlite:///app.db')
+    # 로컬 개발용 (SQLite) - 절대 경로로 설정
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    DB_PATH = os.path.join(BASE_DIR, 'instance', 'app.db')
+    SQLALCHEMY_DATABASE_URI = os.getenv('SQLALCHEMY_DATABASE_URI', f'sqlite:///{DB_PATH}')
 
 SQLALCHEMY_TRACK_MODIFICATIONS = False
 

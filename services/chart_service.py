@@ -355,38 +355,59 @@ def generate(df_input, freq_label, suffix, ticker):
         if handles:
             ax.legend(handles, labels, loc="upper left", fontsize="small")
 
-    # S3 업로드로 변경
+    # 로컬 저장 전용 (S3 코드 제거)
     try:
-        from services.s3_service import get_s3_service
-        s3_service = get_s3_service()
-        
-        if s3_service:
-            # S3에 차트 업로드
-            chart_url = s3_service.upload_chart(fig, ticker, suffix)
-            plt.close('all')
-            
-            # 디버그 정보도 S3에 저장 (선택사항)
-            if freq_label == "Daily" and chart_url:
-                debug_content = f"[EMA DEBUG] Ticker: {ticker} (Chart Generation)\n"
-                debug_content += "[Daily EMA for Chart]\n"
-                debug_content += '\n'.join(daily_ema_data)
-                s3_service.upload_analysis(debug_content, f"{ticker}_ema_debug")
-            
-            return chart_url
-        else:
-            # S3 서비스 실패 시 fallback - 로컬 저장
-            logging.warning("S3 서비스를 사용할 수 없습니다. 로컬 저장으로 fallback합니다.")
-            date_folder = get_date_folder_path(CHART_DIR, current_date_str)
-            path = os.path.join(date_folder, f"{ticker}_{suffix}_{current_date_str}.png")
-            fig.savefig(path, bbox_inches="tight")
-            plt.close('all')
-            return path
-            
-    except Exception as e:
-        logging.error(f"S3 업로드 실패, 로컬 저장으로 fallback: {e}")
-        # 로컬 저장 fallback
         date_folder = get_date_folder_path(CHART_DIR, current_date_str)
         path = os.path.join(date_folder, f"{ticker}_{suffix}_{current_date_str}.png")
         fig.savefig(path, bbox_inches="tight")
         plt.close('all')
-        return path 
+        
+        # 파일 권한 자동 설정 (영구적 해결책)
+        try:
+            import stat
+            import pwd
+            import grp
+            
+            # www-data 사용자와 그룹 ID 확인
+            www_data_uid = pwd.getpwnam('www-data').pw_uid
+            www_data_gid = grp.getgrnam('www-data').gr_gid
+            
+            # 파일 소유권을 www-data로 변경
+            os.chown(path, www_data_uid, www_data_gid)
+            
+            # 파일 권한을 644로 설정 (읽기/쓰기: 소유자, 읽기: 그룹/기타)
+            os.chmod(path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
+            
+            # 디렉토리 권한도 확인하고 설정
+            os.chown(date_folder, www_data_uid, www_data_gid)
+            os.chmod(date_folder, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)  # 755
+            
+            logging.info(f"차트 파일 권한 설정 완료: {path}")
+            
+        except Exception as perm_error:
+            logging.warning(f"파일 권한 설정 실패 (무시): {perm_error}")
+        
+        # 디버그 정보 로컬 저장 (Daily 차트일 때만)
+        if freq_label == "Daily":
+            try:
+                debug_content = f"[EMA DEBUG] Ticker: {ticker} (Chart Generation)\n"
+                debug_content += "[Daily EMA for Chart]\n"
+                debug_content += '\n'.join(daily_ema_data)
+                
+                debug_path = os.path.join(date_folder, f"{ticker}_ema_debug_{current_date_str}.txt")
+                with open(debug_path, 'w', encoding='utf-8') as f:
+                    f.write(debug_content)
+                
+                # 디버그 파일도 권한 설정
+                os.chown(debug_path, www_data_uid, www_data_gid)
+                os.chmod(debug_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
+                
+            except Exception as debug_error:
+                logging.warning(f"디버그 파일 저장 실패 (무시): {debug_error}")
+        
+        return path
+        
+    except Exception as e:
+        logging.error(f"차트 저장 실패: {e}")
+        plt.close('all')
+        return None 

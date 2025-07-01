@@ -749,21 +749,32 @@ def analyze_ticker_internal_logic(ticker, analysis_html_path):
         summary_gemini = _extract_summary_from_analysis(analysis_gemini)
         logging.info(f"[{ticker}] Summary extracted successfully")
 
-    # 분석 결과를 S3에 저장
-    logging.info(f"[{ticker}] Saving analysis to S3...")
+    # 분석 결과를 로컬에 저장 (S3 제거)
+    logging.info(f"[{ticker}] Saving analysis locally...")
     try:
-        from services.s3_service import get_s3_service
-        s3_service = get_s3_service()
+        # 분석 텍스트를 로컬 텍스트 파일로 저장
+        if gemini_succeeded:
+            analysis_text_path = os.path.join(analysis_folder, f"{ticker}_analysis_{current_date_str}.txt")
+            with open(analysis_text_path, 'w', encoding='utf-8') as f:
+                f.write(analysis_gemini)
+            
+            # 분석 텍스트 파일 권한 설정
+            try:
+                import stat
+                import pwd
+                import grp
+                
+                www_data_uid = pwd.getpwnam('www-data').pw_uid
+                www_data_gid = grp.getgrnam('www-data').gr_gid
+                
+                os.chown(analysis_text_path, www_data_uid, www_data_gid)
+                os.chmod(analysis_text_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
+                
+                logging.info(f"[{ticker}] Analysis text saved locally with proper permissions: {analysis_text_path}")
+            except Exception as perm_error:
+                logging.warning(f"[{ticker}] File permission setting failed (ignored): {perm_error}")
         
-        if s3_service and gemini_succeeded:
-            # S3에 분석 텍스트 저장
-            analysis_url = s3_service.upload_analysis(analysis_gemini, ticker)
-            if analysis_url:
-                logging.info(f"[{ticker}] Analysis saved to S3: {analysis_url}")
-            else:
-                logging.warning(f"[{ticker}] Failed to save analysis to S3")
-        
-        # HTML 파일은 여전히 로컬에 저장 (템플릿 렌더링 용)
+        # HTML 파일도 로컬에 저장 (템플릿 렌더링 용)
         if current_app:
             # 이미 애플리케이션 컨텍스트 내에 있는 경우
             rendered_html = render_template("charts.html", ticker=ticker, charts=charts, date=display_date, analysis_gemini=analysis_gemini)
@@ -778,9 +789,17 @@ def analyze_ticker_internal_logic(ticker, analysis_html_path):
                 with open(analysis_html_path, 'w', encoding='utf-8') as f:
                     f.write(rendered_html)
                 logging.info(f"[{ticker}] HTML analysis file saved successfully with app_context")
+        
+        # HTML 파일 권한 설정
+        try:
+            os.chown(analysis_html_path, www_data_uid, www_data_gid)
+            os.chmod(analysis_html_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
+            logging.info(f"[{ticker}] HTML file permissions set successfully")
+        except Exception as perm_error:
+            logging.warning(f"[{ticker}] HTML file permission setting failed (ignored): {perm_error}")
                 
     except Exception as e:
-        logging.error(f"[{ticker}] Failed to save analysis (S3/HTML): {e}")
+        logging.error(f"[{ticker}] Failed to save analysis files: {e}")
         # 저장 실패해도 계속 진행
     
     # JSON 응답 반환

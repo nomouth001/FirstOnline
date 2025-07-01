@@ -12,15 +12,20 @@ PERMANENT_SESSION_LIFETIME = timedelta(days=7)
 # 로깅 설정
 LOGGING_ENABLED = True
 
-# 데이터베이스 설정
-if os.getenv('DATABASE_URL'):
-    # Render.com 배포용 (PostgreSQL)
-    SQLALCHEMY_DATABASE_URI = os.getenv('DATABASE_URL').replace('postgres://', 'postgresql://')
-else:
-    # 로컬 개발용 (SQLite) - 절대 경로로 설정
+# 데이터베이스 설정 - PostgreSQL 중심
+if os.getenv('USE_SQLITE'):
+    # 로컬 개발용 SQLite (USE_SQLITE=true 환경변수 설정 시에만 사용)
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     DB_PATH = os.path.join(BASE_DIR, 'instance', 'app.db')
-    SQLALCHEMY_DATABASE_URI = os.getenv('SQLALCHEMY_DATABASE_URI', f'sqlite:///{DB_PATH}')
+    SQLALCHEMY_DATABASE_URI = f'sqlite:///{DB_PATH}'
+    print("⚠️  SQLite 모드로 실행 중 (로컬 개발용)")
+elif os.getenv('DATABASE_URL'):
+    # 프로덕션용 PostgreSQL (환경변수에서 가져오기)
+    SQLALCHEMY_DATABASE_URI = os.getenv('DATABASE_URL').replace('postgres://', 'postgresql://')
+else:
+    # 기본값: 로컬 PostgreSQL
+    SQLALCHEMY_DATABASE_URI = 'postgresql://newsletter:NewsLetter2025!@localhost/newsletter_db'
+    print("📘 기본 PostgreSQL 설정 사용")
 
 SQLALCHEMY_TRACK_MODIFICATIONS = False
 

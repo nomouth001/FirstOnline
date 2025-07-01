@@ -219,14 +219,16 @@ def bulk_generate(list_id):
             # 중단 요청 확인
             if is_stop_requested():
                 logger.info(f"일괄 처리가 중단되었습니다. {i-1}개 종목이 처리되었습니다.")
+                # 중단 시에도 최종 진행률 업데이트
+                update_progress(ticker=f"중단됨 ({i-1}개 완료)", processed=i-1, total=total_tickers, list_name=stock_list.name)
                 flash(f'일괄 처리가 중단되었습니다. {i-1}개 종목이 처리되었습니다.', 'warning')
                 break
             
             ticker_start_time = datetime.now()
             logger.info(f"처리 중: {i}/{total_tickers} - {ticker}")
             
-            # 진행상황 업데이트
-            update_progress(ticker=ticker, processed=i-1, total=total_tickers, list_name=stock_list.name)
+            # 진행상황 업데이트 (현재 처리 중인 종목 표시)
+            update_progress(ticker=f"{ticker} (처리 중...)", processed=i-1, total=total_tickers, list_name=stock_list.name)
             
             try:
                 # 1. 차트 생성
@@ -268,6 +270,15 @@ def bulk_generate(list_id):
                     "status": "오류",
                     "error": str(e)
                 })
+            
+            # 처리 완료 후 진행률 업데이트
+            update_progress(ticker=f"{ticker} (완료)", processed=i, total=total_tickers, list_name=stock_list.name)
+            
+            logger.info(f"종목 처리 완료: {i}/{total_tickers} - {ticker}")
+        
+        # 최종 진행률 100% 업데이트
+        final_processed = min(len(results), total_tickers)
+        update_progress(ticker="일괄 생성 완료!", processed=final_processed, total=total_tickers, list_name=stock_list.name)
         
         # 일괄 처리 종료
         end_batch_progress()

@@ -402,14 +402,16 @@ def generate_multiple_lists_analysis():
                 for i, ticker in enumerate(tickers_to_process, 1):
                     # 중단 요청 확인
                     if is_stop_requested():
-                        logging.info(f"Stop requested during multiple lists processing. Stopping at ticker {processed_count-1}/{total_tickers}")
+                        logging.info(f"Stop requested during multiple lists processing. Stopping at ticker {processed_count}/{total_tickers}")
+                        # 중단 시에도 최종 진행률 업데이트
+                        update_progress(ticker=f"중단됨 ({processed_count}개 완료)", processed=processed_count, total=total_tickers, list_name=f"{len(selected_lists)}개 리스트")
                         return jsonify({
-                            "message": f"여러 리스트 일괄 처리가 중단되었습니다. {processed_count-1}개 종목이 처리되었습니다.",
+                            "message": f"여러 리스트 일괄 처리가 중단되었습니다. {processed_count}개 종목이 처리되었습니다.",
                             "results": all_results,
                             "summary": {
                                 "total_lists": len(selected_lists),
                                 "total_tickers": total_tickers,
-                                "processed": processed_count-1,
+                                "processed": processed_count,
                                 "stopped": True
                             }
                         }), 200
@@ -417,9 +419,8 @@ def generate_multiple_lists_analysis():
                     ticker_start_time = datetime.now()
                     logging.info(f"=== START Processing ticker {i}/{len(tickers_to_process)}: {ticker} from list: {list_name} ===")
                     
-                    # 진행상황 업데이트
-                    processed_count += 1
-                    update_progress(ticker=ticker, processed=processed_count-1, total=total_tickers, list_name=f"{list_name} ({processed_count}/{total_tickers})")
+                    # 진행상황 업데이트 (현재 처리 중인 종목 표시)
+                    update_progress(ticker=f"{ticker} (처리 중...)", processed=processed_count, total=total_tickers, list_name=f"{list_name} ({processed_count+1}/{total_tickers})")
                     
                     chart_generation_status = None
                     analysis_status = None
@@ -535,6 +536,10 @@ def generate_multiple_lists_analysis():
                             "analysis_status": analysis_status
                         })
                         
+                        # 처리 완료 후 진행률 업데이트
+                        processed_count += 1
+                        update_progress(ticker=f"{ticker} (완료)", processed=processed_count, total=total_tickers, list_name=f"{list_name} ({processed_count}/{total_tickers})")
+                        
                         total_duration = (datetime.now() - ticker_start_time).total_seconds()
                         logging.info(f"=== END Processing ticker {i}/{len(tickers_to_process)}: {ticker} from list: {list_name} (Total time: {total_duration:.2f}s) ===")
                         
@@ -567,6 +572,10 @@ def generate_multiple_lists_analysis():
                     failed_count = len(results) - success_count
                     total_success += success_count
                     total_failed += failed_count
+            
+            # 최종 진행률 100% 업데이트
+            final_processed = min(processed_count, total_tickers)
+            update_progress(ticker="여러 리스트 일괄 생성 완료!", processed=final_processed, total=total_tickers, list_name=f"{len(selected_lists)}개 리스트")
             
             logging.info(f"Multiple lists batch processing completed: {total_success} successful, {total_failed} failed out of {total_tickers} total")
             

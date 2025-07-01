@@ -86,8 +86,13 @@
     try {
       console.log('진행상황 업데이트 시작...');
       const response = await fetch('/get_current_progress');
-      const data = await response.json();
       
+      if (!response.ok) {
+        console.warn('진행상황 조회 응답 실패:', response.status);
+        return;
+      }
+      
+      const data = await response.json();
       console.log('진행상황 데이터:', data); // 디버깅용
       
       const progressText = document.getElementById('current-progress-text');
@@ -98,12 +103,13 @@
       }
       
       if (data.is_running && data.type === 'single') {
-        console.log('진행 중인 작업 발견:', data.type);
+        console.log('진행 중인 단일 리스트 작업 발견');
         
         let displayText = '';
         displayText = `<strong>📊 현재 리스트 일괄생성 진행 중...</strong><br>`;
         displayText += `• 현재 처리 중: <span style="color: #007bff; font-weight: bold;">${data.current_ticker || '준비 중'}</span><br>`;
         displayText += `• 진행률: <span style="color: #28a745; font-weight: bold;">${data.processed_tickers}/${data.total_tickers} (${data.progress_percentage}%)</span><br>`;
+        displayText += `• 리스트: <span style="color: #6f42c1; font-weight: bold;">${data.current_list || '알 수 없음'}</span><br>`;
         if (data.elapsed_time) {
           displayText += `• 경과 시간: <span style="color: #6c757d;">${data.elapsed_time}</span><br>`;
         }
@@ -114,14 +120,57 @@
         progressText.innerHTML = displayText + '<div style="margin-top: 10px;"><button id="stop-single-btn" onclick="stopBatchProcessing()" style="padding: 8px 16px; background-color: #dc3545; color: white; border: none; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer;">⏹️ 일괄생성 중단</button></div>';
         progressText.style.display = 'block';
         console.log('단일 리스트 진행상황 표시됨');
+        
+        // 진행 중일 때는 모니터링 계속 유지
+        if (!progressInterval) {
+          console.log('진행 중인 작업 발견 - 모니터링 재시작');
+          startProgressMonitoring();
+        }
+      } else if (data.is_running && data.type === 'multiple') {
+        console.log('진행 중인 여러 리스트 작업 발견');
+        
+        let displayText = '';
+        displayText = `<strong>🎯 여러 리스트 일괄생성 진행 중...</strong><br>`;
+        displayText += `• 현재 처리 중: <span style="color: #007bff; font-weight: bold;">${data.current_ticker || '준비 중'}</span><br>`;
+        displayText += `• 진행률: <span style="color: #28a745; font-weight: bold;">${data.processed_tickers}/${data.total_tickers} (${data.progress_percentage}%)</span><br>`;
+        displayText += `• 처리 중인 리스트: <span style="color: #6f42c1; font-weight: bold;">${data.current_list || '알 수 없음'}</span><br>`;
+        if (data.elapsed_time) {
+          displayText += `• 경과 시간: <span style="color: #6c757d;">${data.elapsed_time}</span><br>`;
+        }
+        if (data.estimated_completion) {
+          displayText += `• 예상 완료: <span style="color: #dc3545;">${data.estimated_completion}</span>`;
+        }
+        
+        progressText.innerHTML = displayText + '<div style="margin-top: 10px;"><button id="stop-multiple-btn" onclick="stopBatchProcessing()" style="padding: 8px 16px; background-color: #dc3545; color: white; border: none; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer;">⏹️ 일괄생성 중단</button></div>';
+        progressText.style.display = 'block';
+        console.log('여러 리스트 진행상황 표시됨');
+        
+        // 진행 중일 때는 모니터링 계속 유지
+        if (!progressInterval) {
+          console.log('진행 중인 작업 발견 - 모니터링 재시작');
+          startProgressMonitoring();
+        }
       } else {
         console.log('진행 중인 작업 없음 - 진행상황 표시 숨김');
         // 진행 중인 작업이 없으면 진행상황 표시 숨기기
         progressText.style.display = 'none';
         
-        // 인터벌 정지
-        stopProgressMonitoring();
+        // 3회 연속 작업 없음 확인 후 모니터링 중단 (너무 빨리 중단되는 것 방지)
+        if (!window.noProgressCount) window.noProgressCount = 0;
+        window.noProgressCount++;
+        
+        if (window.noProgressCount >= 3) {
+          console.log('3회 연속 진행 없음 확인 - 모니터링 중단');
+          stopProgressMonitoring();
+          window.noProgressCount = 0;
+        }
       }
+      
+      // 진행 중인 작업이 있으면 카운터 리셋
+      if (data.is_running) {
+        window.noProgressCount = 0;
+      }
+      
     } catch (error) {
       console.error('진행상황 업데이트 오류:', error);
       // 오류 발생 시에도 진행상황 표시 영역을 숨김
@@ -158,7 +207,14 @@
 
   // 페이지 로드 시 진행상황 모니터링 시작
   document.addEventListener('DOMContentLoaded', function() {
-    startProgressMonitoring();
+    console.log('페이지 로드 완료 - 진행상황 확인 시작');
+    // 즉시 진행상황 확인하여 진행 중인 작업이 있으면 모니터링 시작
+    updateProgressDisplay().then(() => {
+      // 첫 번째 확인 후 정기적인 모니터링 시작
+      if (!progressInterval) {
+        startProgressMonitoring();
+      }
+    });
   });
 
   async function loadStockLists() {

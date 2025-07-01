@@ -248,7 +248,14 @@
 
   // 페이지 로드 시 진행상황 모니터링 시작
   document.addEventListener('DOMContentLoaded', function() {
-    startProgressMonitoring();
+    console.log('인덱스 페이지 로드 완료 - 진행상황 확인 시작');
+    // 즉시 진행상황 확인하여 진행 중인 작업이 있으면 모니터링 시작
+    updateProgressDisplay().then(() => {
+      // 첫 번째 확인 후 정기적인 모니터링 시작
+      if (!progressInterval) {
+        startProgressMonitoring();
+      }
+    });
   });
 
   async function loadStockLists() {

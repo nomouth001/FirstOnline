@@ -752,6 +752,8 @@ def analyze_ticker_internal_logic(ticker, analysis_html_path):
     # 분석 결과를 로컬에 저장 (S3 제거)
     logging.info(f"[{ticker}] Saving analysis locally...")
     try:
+        import stat  # 권한 설정을 위한 import
+        
         # 분석 텍스트를 로컬 텍스트 파일로 저장
         if gemini_succeeded:
             analysis_text_path = os.path.join(analysis_folder, f"{ticker}_analysis_{current_date_str}.txt")
@@ -760,16 +762,8 @@ def analyze_ticker_internal_logic(ticker, analysis_html_path):
             
             # 분석 텍스트 파일 권한 설정
             try:
-                import stat
-                import pwd
-                import grp
-                
-                www_data_uid = pwd.getpwnam('www-data').pw_uid
-                www_data_gid = grp.getgrnam('www-data').gr_gid
-                
-                os.chown(analysis_text_path, www_data_uid, www_data_gid)
+                # 파일 권한을 644로 설정 (읽기/쓰기: 소유자, 읽기: 그룹/기타)
                 os.chmod(analysis_text_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
-                
                 logging.info(f"[{ticker}] Analysis text saved locally with proper permissions: {analysis_text_path}")
             except Exception as perm_error:
                 logging.warning(f"[{ticker}] File permission setting failed (ignored): {perm_error}")
@@ -792,7 +786,6 @@ def analyze_ticker_internal_logic(ticker, analysis_html_path):
         
         # HTML 파일 권한 설정
         try:
-            os.chown(analysis_html_path, www_data_uid, www_data_gid)
             os.chmod(analysis_html_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
             logging.info(f"[{ticker}] HTML file permissions set successfully")
         except Exception as perm_error:

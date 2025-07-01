@@ -368,19 +368,12 @@ def generate(df_input, freq_label, suffix, ticker):
             import pwd
             import grp
             
-            # www-data 사용자와 그룹 ID 확인
-            www_data_uid = pwd.getpwnam('www-data').pw_uid
-            www_data_gid = grp.getgrnam('www-data').gr_gid
-            
-            # 파일 소유권을 www-data로 변경
-            os.chown(path, www_data_uid, www_data_gid)
-            
+            # 현재 실행 사용자 (ubuntu)가 소유하되, 웹서버가 읽을 수 있도록 권한 설정
             # 파일 권한을 644로 설정 (읽기/쓰기: 소유자, 읽기: 그룹/기타)
             os.chmod(path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
             
-            # 디렉토리 권한도 확인하고 설정
-            os.chown(date_folder, www_data_uid, www_data_gid)
-            os.chmod(date_folder, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)  # 755
+            # 디렉토리 권한을 755로 설정 (읽기/쓰기/실행: 소유자, 읽기/실행: 그룹/기타)
+            os.chmod(date_folder, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
             
             logging.info(f"차트 파일 권한 설정 완료: {path}")
             
@@ -398,8 +391,7 @@ def generate(df_input, freq_label, suffix, ticker):
                 with open(debug_path, 'w', encoding='utf-8') as f:
                     f.write(debug_content)
                 
-                # 디버그 파일도 권한 설정
-                os.chown(debug_path, www_data_uid, www_data_gid)
+                # 디버그 파일도 권한 설정  
                 os.chmod(debug_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
                 
             except Exception as debug_error:

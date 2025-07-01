@@ -355,49 +355,78 @@ def generate(df_input, freq_label, suffix, ticker):
         if handles:
             ax.legend(handles, labels, loc="upper left", fontsize="small")
 
-    # 로컬 저장 전용 (S3 코드 제거)
+    # Flask instance 디렉토리 사용 방식으로 권한 문제 완전 해결
     try:
-        date_folder = get_date_folder_path(CHART_DIR, current_date_str)
-        path = os.path.join(date_folder, f"{ticker}_{suffix}_{current_date_str}.png")
-        fig.savefig(path, bbox_inches="tight")
+        import tempfile
+        import shutil
+        import stat
+        from flask import current_app
+        
+        # 1. Flask instance 디렉토리 사용 (권한 문제 없음)
+        if current_app:
+            instance_charts_dir = os.path.join(current_app.instance_path, 'charts', current_date_str)
+        else:
+            # app_context 외부에서 호출될 경우 홈 디렉토리 사용
+            instance_charts_dir = os.path.join(os.path.expanduser('~'), 'newsletter_charts', current_date_str)
+        
+        # 2. instance 디렉토리 생성 (권한 문제 없음)
+        os.makedirs(instance_charts_dir, exist_ok=True)
+        
+        # 3. instance 디렉토리에 차트 파일 생성
+        instance_path = os.path.join(instance_charts_dir, f"{ticker}_{suffix}_{current_date_str}.png")
+        fig.savefig(instance_path, bbox_inches="tight")
         plt.close('all')
         
-        # 파일 권한 자동 설정 (영구적 해결책)
-        try:
-            import stat
-            import pwd
-            import grp
-            
-            # 현재 실행 사용자 (ubuntu)가 소유하되, 웹서버가 읽을 수 있도록 권한 설정
-            # 파일 권한을 644로 설정 (읽기/쓰기: 소유자, 읽기: 그룹/기타)
-            os.chmod(path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
-            
-            # 디렉토리 권한을 755로 설정 (읽기/쓰기/실행: 소유자, 읽기/실행: 그룹/기타)
-            os.chmod(date_folder, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
-            
-            logging.info(f"차트 파일 권한 설정 완료: {path}")
-            
-        except Exception as perm_error:
-            logging.warning(f"파일 권한 설정 실패 (무시): {perm_error}")
+        # 4. static 디렉토리로 심볼릭 링크 생성 (웹 접근 가능하도록)
+        static_date_folder = get_date_folder_path(CHART_DIR, current_date_str)
+        static_path = os.path.join(static_date_folder, f"{ticker}_{suffix}_{current_date_str}.png")
         
-        # 디버그 정보 로컬 저장 (Daily 차트일 때만)
+        try:
+            # static 디렉토리가 없으면 생성 시도
+            os.makedirs(static_date_folder, exist_ok=True)
+            
+            # 기존 파일이 있으면 삭제
+            if os.path.exists(static_path):
+                os.remove(static_path)
+            
+            # 심볼릭 링크 생성 (실제 파일은 instance에, 웹 접근은 static으로)
+            os.symlink(instance_path, static_path)
+            logging.info(f"차트 파일 생성 및 심볼릭 링크 성공: {static_path} -> {instance_path}")
+            
+        except (PermissionError, OSError) as symlink_error:
+            # 심볼릭 링크 실패 시 복사로 대체
+            try:
+                # static 디렉토리를 홈 디렉토리에 새로 생성
+                home_static_dir = os.path.join(os.path.expanduser('~'), 'newsletter_static', 'charts', current_date_str)
+                os.makedirs(home_static_dir, exist_ok=True)
+                
+                home_static_path = os.path.join(home_static_dir, f"{ticker}_{suffix}_{current_date_str}.png")
+                shutil.copy2(instance_path, home_static_path)
+                
+                logging.info(f"차트 파일 홈 디렉토리에 복사: {home_static_path}")
+                return home_static_path
+                
+            except Exception as copy_error:
+                logging.warning(f"파일 복사도 실패, instance 경로 반환: {copy_error}")
+                return instance_path
+        
+        # 5. 디버그 정보도 동일한 방식으로 저장
         if freq_label == "Daily":
             try:
                 debug_content = f"[EMA DEBUG] Ticker: {ticker} (Chart Generation)\n"
                 debug_content += "[Daily EMA for Chart]\n"
                 debug_content += '\n'.join(daily_ema_data)
                 
-                debug_path = os.path.join(date_folder, f"{ticker}_ema_debug_{current_date_str}.txt")
-                with open(debug_path, 'w', encoding='utf-8') as f:
+                debug_instance_path = os.path.join(instance_charts_dir, f"{ticker}_ema_debug_{current_date_str}.txt")
+                with open(debug_instance_path, 'w', encoding='utf-8') as f:
                     f.write(debug_content)
                 
-                # 디버그 파일도 권한 설정  
-                os.chmod(debug_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
+                logging.info(f"디버그 파일 저장: {debug_instance_path}")
                 
             except Exception as debug_error:
                 logging.warning(f"디버그 파일 저장 실패 (무시): {debug_error}")
         
-        return path
+        return static_path
         
     except Exception as e:
         logging.error(f"차트 저장 실패: {e}")

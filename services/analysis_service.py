@@ -749,47 +749,66 @@ def analyze_ticker_internal_logic(ticker, analysis_html_path):
         summary_gemini = _extract_summary_from_analysis(analysis_gemini)
         logging.info(f"[{ticker}] Summary extracted successfully")
 
-    # 분석 결과를 로컬에 저장 (S3 제거)
-    logging.info(f"[{ticker}] Saving analysis locally...")
+    # Flask instance 디렉토리 사용으로 권한 문제 완전 해결
+    logging.info(f"[{ticker}] Saving analysis using Flask instance directory...")
     try:
-        import stat  # 권한 설정을 위한 import
+        import shutil
         
-        # 분석 텍스트를 로컬 텍스트 파일로 저장
+        # 1. Flask instance 디렉토리 사용 (권한 문제 없음)
+        if current_app:
+            instance_analysis_dir = os.path.join(current_app.instance_path, 'analysis')
+        else:
+            # app_context 외부에서 호출될 경우 홈 디렉토리 사용
+            instance_analysis_dir = os.path.join(os.path.expanduser('~'), 'newsletter_analysis')
+        
+        # 2. instance 디렉토리 생성 (권한 문제 없음)
+        os.makedirs(instance_analysis_dir, exist_ok=True)
+        
+        # 3. 분석 텍스트를 instance 디렉토리에 저장
         if gemini_succeeded:
-            analysis_text_path = os.path.join(analysis_folder, f"{ticker}_analysis_{current_date_str}.txt")
-            with open(analysis_text_path, 'w', encoding='utf-8') as f:
+            instance_text_path = os.path.join(instance_analysis_dir, f"{ticker}_analysis_{current_date_str}.txt")
+            with open(instance_text_path, 'w', encoding='utf-8') as f:
                 f.write(analysis_gemini)
             
-            # 분석 텍스트 파일 권한 설정
+            # static 디렉토리로 복사 시도 (웹 접근 가능하도록)
             try:
-                # 파일 권한을 644로 설정 (읽기/쓰기: 소유자, 읽기: 그룹/기타)
-                os.chmod(analysis_text_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
-                logging.info(f"[{ticker}] Analysis text saved locally with proper permissions: {analysis_text_path}")
-            except Exception as perm_error:
-                logging.warning(f"[{ticker}] File permission setting failed (ignored): {perm_error}")
+                os.makedirs(analysis_folder, exist_ok=True)
+                static_text_path = os.path.join(analysis_folder, f"{ticker}_analysis_{current_date_str}.txt")
+                shutil.copy2(instance_text_path, static_text_path)
+                logging.info(f"[{ticker}] Analysis text saved to both instance and static: {static_text_path}")
+            except PermissionError:
+                logging.info(f"[{ticker}] Analysis text saved to instance only: {instance_text_path}")
         
-        # HTML 파일도 로컬에 저장 (템플릿 렌더링 용)
+        # 4. HTML 파일도 instance 디렉토리에 저장
+        instance_html_path = os.path.join(instance_analysis_dir, f"{ticker}_{current_date_str}.html")
+        
         if current_app:
             # 이미 애플리케이션 컨텍스트 내에 있는 경우
             rendered_html = render_template("charts.html", ticker=ticker, charts=charts, date=display_date, analysis_gemini=analysis_gemini)
-            with open(analysis_html_path, 'w', encoding='utf-8') as f:
+            with open(instance_html_path, 'w', encoding='utf-8') as f:
                 f.write(rendered_html)
-            logging.info(f"[{ticker}] HTML analysis file saved successfully")
+            logging.info(f"[{ticker}] HTML analysis file saved to instance")
         else:
             # 애플리케이션 컨텍스트 외부에 있는 경우
             from app import app
             with app.app_context():
                 rendered_html = render_template("charts.html", ticker=ticker, charts=charts, date=display_date, analysis_gemini=analysis_gemini)
-                with open(analysis_html_path, 'w', encoding='utf-8') as f:
+                with open(instance_html_path, 'w', encoding='utf-8') as f:
                     f.write(rendered_html)
-                logging.info(f"[{ticker}] HTML analysis file saved successfully with app_context")
+                logging.info(f"[{ticker}] HTML analysis file saved to instance with app_context")
         
-        # HTML 파일 권한 설정
+        # 5. static 디렉토리로 HTML 복사 시도
         try:
-            os.chmod(analysis_html_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
-            logging.info(f"[{ticker}] HTML file permissions set successfully")
-        except Exception as perm_error:
-            logging.warning(f"[{ticker}] HTML file permission setting failed (ignored): {perm_error}")
+            shutil.copy2(instance_html_path, analysis_html_path)
+            logging.info(f"[{ticker}] HTML file copied to static directory: {analysis_html_path}")
+        except PermissionError:
+            # 복사 실패 시 홈 디렉토리에 대체 경로 생성
+            home_analysis_dir = os.path.join(os.path.expanduser('~'), 'newsletter_static', 'analysis')
+            os.makedirs(home_analysis_dir, exist_ok=True)
+            
+            home_html_path = os.path.join(home_analysis_dir, f"{ticker}_{current_date_str}.html")
+            shutil.copy2(instance_html_path, home_html_path)
+            logging.info(f"[{ticker}] HTML file saved to home directory: {home_html_path}")
                 
     except Exception as e:
         logging.error(f"[{ticker}] Failed to save analysis files: {e}")

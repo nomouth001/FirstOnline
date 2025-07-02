@@ -471,9 +471,14 @@
     }
     try {
         const res = await fetch(`/delete_ticker?ticker=${ticker}`, { method: 'DELETE' });
-        const message = await res.text();
-        showInlineMessage(message, 'success');
-        if (res.ok) {
+        
+        // JSON 응답 처리
+        const data = await res.json();
+        const message = data.message || '알 수 없는 응답';
+        
+        showInlineMessage(message, data.success ? 'success' : 'error');
+        
+        if (data.success) {
             loadTickers();
         }
     } catch (error) {

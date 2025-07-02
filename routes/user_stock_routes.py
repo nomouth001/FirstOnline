@@ -301,11 +301,22 @@ def bulk_generate(list_id):
 @login_required
 def lookup_ticker():
     """종목 코드 조회"""
-    ticker = request.args.get("ticker", "").upper()
-    if not ticker:
-        return jsonify({"error": "종목 코드가 필요합니다"}), 400
-
+    from flask import Response
+    import json
+    
     try:
+        ticker = request.args.get("ticker", "").upper()
+        if not ticker:
+            error_response = Response(
+                json.dumps({"error": "종목 코드가 필요합니다", "success": False}),
+                status=400,
+                mimetype='application/json',
+                headers={'Content-Type': 'application/json; charset=utf-8'}
+            )
+            return error_response
+
+        logger.info(f"종목 조회 요청: '{ticker}' (사용자: {current_user.username})")
+
         stock_info = yf.Ticker(ticker).info
         name = stock_info.get("longName") or stock_info.get("shortName")
         sector = stock_info.get("sector", "")
@@ -314,7 +325,7 @@ def lookup_ticker():
         country = stock_info.get("country", "")
 
         if name:
-            return jsonify({
+            result = {
                 "ticker": ticker, 
                 "name": name,
                 "sector": sector,
@@ -322,27 +333,63 @@ def lookup_ticker():
                 "market_cap": market_cap,
                 "country": country,
                 "success": True
-            })
+            }
+            logger.info(f"종목 조회 성공: {ticker} -> {name} (사용자: {current_user.username})")
+            
+            response = Response(
+                json.dumps(result, ensure_ascii=False),
+                mimetype='application/json',
+                headers={'Content-Type': 'application/json; charset=utf-8'}
+            )
+            return response
         else:
-            return jsonify({"name": None, "message": "종목을 찾을 수 없습니다.", "success": False}), 404
+            error_result = {"name": None, "message": "종목을 찾을 수 없습니다.", "success": False}
+            logger.warning(f"종목 조회 실패: {ticker} - 종목을 찾을 수 없음 (사용자: {current_user.username})")
+            
+            response = Response(
+                json.dumps(error_result, ensure_ascii=False),
+                status=404,
+                mimetype='application/json',
+                headers={'Content-Type': 'application/json; charset=utf-8'}
+            )
+            return response
+            
     except Exception as e:
-        logger.error(f"종목 조회 실패 {ticker}: {e}")
-        return jsonify({"name": None, "message": "종목 조회에 실패했습니다.", "success": False}), 500
+        logger.error(f"종목 조회 실패 {ticker}: {e} (사용자: {current_user.username})")
+        error_result = {"name": None, "message": "종목 조회에 실패했습니다.", "success": False, "error": str(e)}
+        
+        response = Response(
+            json.dumps(error_result, ensure_ascii=False),
+            status=500,
+            mimetype='application/json',
+            headers={'Content-Type': 'application/json; charset=utf-8'}
+        )
+        return response
 
 @user_stock_bp.route('/search-stocks')
 @login_required
 def search_stocks():
     """종목 검색 (자동완성용)"""
-    query = request.args.get("q", "").strip()
-    
-    if not query or len(query) < 2:
-        return jsonify([])
+    from flask import Response
+    import json
     
     try:
+        query = request.args.get("q", "").strip()
+        
+        if not query or len(query) < 2:
+            response = Response(
+                json.dumps([]),
+                mimetype='application/json',
+                headers={'Content-Type': 'application/json; charset=utf-8'}
+            )
+            return response
+        
+        logger.info(f"종목 검색 요청: '{query}' (사용자: {current_user.username})")
+        
         # 일반적인 종목 코드들로 검색
         common_tickers = [
             "AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "META", "NVDA", "NFLX", "ADBE", "CRM",
-            "005930", "000660", "005380", "035420", "051910", "006400", "035720", "068270", "207940", "323410"
+            "005930.KS", "000660.KS", "005380.KS", "035420.KS", "051910.KS", "006400.KS", "035720.KS", "068270.KS", "207940.KS", "323410.KS"
         ]
         
         results = []
@@ -360,7 +407,16 @@ def search_stocks():
                             "sector": stock_info.get("sector", ""),
                             "country": stock_info.get("country", "")
                         })
-                except:
+                    else:
+                        # 기본 정보만 제공
+                        results.append({
+                            "ticker": ticker,
+                            "name": ticker,
+                            "sector": "",
+                            "country": ""
+                        })
+                except Exception as ticker_error:
+                    logger.warning(f"종목 {ticker} 정보 조회 실패: {ticker_error}")
                     # 기본 정보만 제공
                     results.append({
                         "ticker": ticker,
@@ -370,11 +426,24 @@ def search_stocks():
                     })
         
         # 결과 수 제한
-        return jsonify(results[:10])
+        final_results = results[:10]
+        logger.info(f"종목 검색 결과: {len(final_results)}개 (사용자: {current_user.username})")
+        
+        response = Response(
+            json.dumps(final_results, ensure_ascii=False),
+            mimetype='application/json',
+            headers={'Content-Type': 'application/json; charset=utf-8'}
+        )
+        return response
         
     except Exception as e:
-        logger.error(f"종목 검색 실패: {e}")
-        return jsonify([])
+        logger.error(f"종목 검색 실패 (사용자: {current_user.username}): {e}")
+        error_response = Response(
+            json.dumps([]),
+            mimetype='application/json',
+            headers={'Content-Type': 'application/json; charset=utf-8'}
+        )
+        return error_response
 
 # API 엔드포인트들
 @user_stock_bp.route('/api/stock-lists')

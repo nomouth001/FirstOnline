@@ -144,29 +144,41 @@ document.getElementById('stockSearch').addEventListener('input', function() {
     
     searchTimeout = setTimeout(() => {
         fetch(`/user/search-stocks?q=${encodeURIComponent(query)}`)
-            .then(response => response.json())
+            .then(response => {
+                // JSON 응답인지 확인
+                const contentType = response.headers.get('content-type');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                if (!contentType || !contentType.includes('application/json')) {
+                    throw new Error('서버에서 JSON이 아닌 응답을 받았습니다.');
+                }
+                return response.json();
+            })
             .then(data => {
                 resultsDiv.innerHTML = '';
                 
-                if (data.length > 0) {
+                if (Array.isArray(data) && data.length > 0) {
                     data.forEach(stock => {
                         const div = document.createElement('div');
                         div.style.padding = '0.5rem';
                         div.style.borderBottom = '1px solid #eee';
                         div.style.cursor = 'pointer';
                         div.innerHTML = `
-                            <strong>${stock.ticker}</strong> - ${stock.name}
+                            <strong>${stock.ticker || 'N/A'}</strong> - ${stock.name || 'N/A'}
                             ${stock.sector ? `<br><small style="color: #666;">${stock.sector}</small>` : ''}
                         `;
                         
                         div.addEventListener('click', () => {
-                            document.getElementById('ticker').value = stock.ticker;
-                            document.getElementById('name').value = stock.name;
+                            document.getElementById('ticker').value = stock.ticker || '';
+                            document.getElementById('name').value = stock.name || '';
                             document.getElementById('stockSearch').value = '';
                             resultsDiv.style.display = 'none';
                             
                             // 종목 정보 조회
-                            lookupStockInfo(stock.ticker);
+                            if (stock.ticker) {
+                                lookupStockInfo(stock.ticker);
+                            }
                         });
                         
                         resultsDiv.appendChild(div);
@@ -178,8 +190,8 @@ document.getElementById('stockSearch').addEventListener('input', function() {
                 }
             })
             .catch(error => {
-                console.log('검색 실패:', error);
-                resultsDiv.innerHTML = '<div style="padding: 0.5rem; color: #dc3545;">검색 중 오류가 발생했습니다.</div>';
+                console.error('검색 실패:', error);
+                resultsDiv.innerHTML = `<div style="padding: 0.5rem; color: #dc3545;">오류 발생: ${error.message}</div>`;
                 resultsDiv.style.display = 'block';
             });
     }, 300);
@@ -196,12 +208,22 @@ document.getElementById('ticker').addEventListener('blur', function() {
 // 종목 정보 조회 함수
 function lookupStockInfo(ticker) {
     fetch(`/user/lookup-ticker?ticker=${ticker}`)
-        .then(response => response.json())
+        .then(response => {
+            // JSON 응답인지 확인
+            const contentType = response.headers.get('content-type');
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            if (!contentType || !contentType.includes('application/json')) {
+                throw new Error('서버에서 JSON이 아닌 응답을 받았습니다.');
+            }
+            return response.json();
+        })
         .then(data => {
             const stockInfoDiv = document.getElementById('stockInfo');
             const stockDetailsDiv = document.getElementById('stockDetails');
             
-            if (data.success && data.name) {
+            if (data && data.success && data.name) {
                 document.getElementById('name').value = data.name;
                 
                 let details = `<p><strong>${data.name}</strong></p>`;
@@ -216,12 +238,21 @@ function lookupStockInfo(ticker) {
                 stockDetailsDiv.innerHTML = details;
                 stockInfoDiv.style.display = 'block';
             } else {
-                stockInfoDiv.style.display = 'none';
+                // 실패한 경우에도 에러 메시지 표시
+                if (data && data.message) {
+                    stockDetailsDiv.innerHTML = `<p style="color: #dc3545;">${data.message}</p>`;
+                    stockInfoDiv.style.display = 'block';
+                } else {
+                    stockInfoDiv.style.display = 'none';
+                }
             }
         })
         .catch(error => {
-            console.log('종목명 조회 실패:', error);
-            document.getElementById('stockInfo').style.display = 'none';
+            console.error('종목명 조회 실패:', error);
+            const stockInfoDiv = document.getElementById('stockInfo');
+            const stockDetailsDiv = document.getElementById('stockDetails');
+            stockDetailsDiv.innerHTML = `<p style="color: #dc3545;">종목 조회 실패: ${error.message}</p>`;
+            stockInfoDiv.style.display = 'block';
         });
 }
 

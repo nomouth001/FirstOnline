@@ -16,7 +16,7 @@ def get_date_folder_path(base_dir, date_str=None):
         date_str = datetime.now().strftime("%Y%m%d")
     
     date_folder = os.path.join(base_dir, date_str)
-    os.makedirs(date_folder, exist_ok=True)
+    ensure_directory_with_permissions(date_folder)
     return date_folder
 
 def cleanup_old_files():

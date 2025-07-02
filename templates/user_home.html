@@ -1,3 +1,4 @@
+<!-- 파일명: user_home.html - 일반 사용자용 메인 페이지 -->
 {% extends "base.html" %}
 {% block content %}
 <div class="card">
@@ -379,64 +380,87 @@
     loadTickers(); // Reload with new sort
   }
 
-  // Ticker form submission
+  console.log("✅ JavaScript 로드 완료 - Form 이벤트 리스너 등록 준비");
+
+  // Ticker form submission - index.html과 동일한 조회→등록 로직
   document.getElementById('ticker-form').addEventListener('submit', async function(e) {
+    console.log("🔍 Form submit 이벤트 발생! JavaScript 정상 작동 중");
     e.preventDefault();
-    const ticker = document.getElementById('ticker').value.trim().toUpperCase();
-    if (!ticker) {
-      showInlineMessage('❌ 종목 코드를 입력하세요.', 'error');
-      return;
-    }
+    console.log("🛑 기본 form submit 동작 차단됨");
+    const ticker = document.getElementById('ticker').value.toUpperCase();
+    console.log("📊 조회할 종목:", ticker);
+    const lookupResultDiv = document.getElementById('lookup-result');
+    lookupResultDiv.innerHTML = `<p>조회 중...</p>`;
 
     try {
-      const res = await fetch('/add_ticker', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticker: ticker })
-      });
-      const result = await res.json();
-      
-      if (res.ok) {
-        document.getElementById('lookup-result').innerHTML = `<div style="color: green; margin-top: 10px;">✅ ${result.message}</div>`;
-        document.getElementById('ticker').value = '';
-        loadTickers(); // Reload the ticker list
-      } else {
-        document.getElementById('lookup-result').innerHTML = `<div style="color: red; margin-top: 10px;">❌ ${result.error}</div>`;
-      }
+        const res = await fetch(`/lookup?ticker=${ticker}`);
+        if (!res.ok) {
+            const errorText = await res.text();
+            lookupResultDiv.innerHTML = `<p>조회 실패: ${errorText}</p>`;
+            return;
+        }
+        const data = await res.json();
+        if (data.name) {
+            lookupResultDiv.innerHTML = `
+                <p>${data.name} (${ticker})</p>
+                <button onclick="addTicker('${ticker}', '${data.name}')">등록</button>`;
+        } else {
+            lookupResultDiv.innerHTML = `<p>잘못된 코드이거나 종목을 찾을 수 없습니다.</p>`;
+        }
     } catch (error) {
-      document.getElementById('lookup-result').innerHTML = `<div style="color: red; margin-top: 10px;">❌ 오류 발생: ${error.message}</div>`;
-      console.error("Add ticker error:", error);
+        lookupResultDiv.innerHTML = `<p>조회 중 오류 발생: ${error.message}</p>`;
+        console.error("Lookup error:", error);
     }
   });
 
-  async function deleteTicker(ticker) {
-    if (!confirm(`정말로 ${ticker}를 삭제하시겠습니까?`)) {
-      return;
-    }
+  console.log("🎯 Form submit 이벤트 리스너 등록 완료!");
 
-    const button = event.target;
-    const originalText = button.textContent;
-    button.textContent = '삭제 중...';
-    button.disabled = true;
-
+  // addTicker 함수 - index.html과 동일
+  async function addTicker(ticker, name) {
     try {
-      const res = await fetch(`/delete_ticker?ticker=${ticker}`, {
-        method: 'DELETE'
-      });
-      const result = await res.json();
-      
-      if (res.ok) {
-        showInlineMessage(`✅ ${result.message}`, 'success');
-        loadTickers(); // Reload the ticker list
-      } else {
-        showInlineMessage(`❌ ${result.error}`, 'error');
-      }
+        const res = await fetch('/add_ticker', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ticker, name })
+        });
+        
+        // JSON 응답 처리
+        const data = await res.json();
+        const message = data.message || '알 수 없는 응답';
+        
+        showInlineMessage(message, data.success ? 'success' : 'error');
+        
+        if (data.success) {
+            loadTickers();
+            document.getElementById("lookup-result").innerHTML = '';
+            document.getElementById("ticker").value = '';
+        }
     } catch (error) {
-      showInlineMessage(`❌ 종목 삭제 중 오류 발생: ${error.message}`, 'error');
-      console.error("Delete ticker error:", error);
-    } finally {
-      button.textContent = originalText;
-      button.disabled = false;
+        showInlineMessage("종목 추가 중 오류 발생: " + error.message, 'error');
+        console.error("Add ticker error:", error);
+    }
+  }
+
+  // deleteTicker 함수 - index.html과 동일
+  async function deleteTicker(ticker) {
+    if (!confirm(`정말로 ${ticker} 종목을 삭제하시겠습니까?`)) {
+        return;
+    }
+    try {
+        const res = await fetch(`/delete_ticker?ticker=${ticker}`, { method: 'DELETE' });
+        
+        // JSON 응답 처리
+        const data = await res.json();
+        const message = data.message || '알 수 없는 응답';
+        
+        showInlineMessage(message, data.success ? 'success' : 'error');
+        
+        if (data.success) {
+            loadTickers();
+        }
+    } catch (error) {
+        showInlineMessage("종목 삭제 중 오류 발생: " + error.message, 'error');
+        console.error("Delete ticker error:", error);
     }
   }
 

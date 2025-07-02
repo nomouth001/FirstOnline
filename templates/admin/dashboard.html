@@ -111,6 +111,8 @@
         <a href="{{ url_for('admin.admin_users') }}" class="btn btn-primary">👥 사용자 관리</a>
         <a href="{{ url_for('admin.admin_analytics') }}" class="btn btn-success">📊 분석 통계</a>
         <a href="{{ url_for('admin.admin_system') }}" class="btn btn-secondary">💻 시스템 정보</a>
+        <a href="{{ url_for('admin.test_email') }}" class="btn btn-info">📧 이메일 발송 테스트</a>
+        <a href="{{ url_for('admin.test_automation') }}" class="btn btn-primary">🤖 자동화 시스템 테스트</a>
         <a href="{{ url_for('admin.cleanup_debug_files') }}" class="btn btn-warning" 
            onclick="return confirm('Debug 파일들을 날짜별 폴더로 정리하시겠습니까?')">
            🗂️ Debug 파일 정리

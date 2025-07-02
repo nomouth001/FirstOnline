@@ -1,5 +1,6 @@
 import logging
-from datetime import datetime, time
+from datetime import datetime, time, timezone, timedelta
+import pytz
 from celery import current_task
 from celery_app import celery_app
 from models import db, User, NewsletterSubscription, Stock, StockList, EmailLog
@@ -304,3 +305,252 @@ def run_bulk_analysis_for_user(user_id, list_ids):
         finally:
             end_batch_progress(user_id)
             # 완료 후 사용자에게 이메일 알림 등 추가 가능 
+
+@celery_app.task(bind=True)
+def auto_analyze_us_stocks(self):
+    """미국 종목 자동 분석 (EST 18:00 = KST 다음날 08:00)"""
+    try:
+        logger.info("=== 미국 종목 자동 분석 시작 ===")
+        
+        from app import app
+        with app.app_context():
+            # 모든 활성 사용자 대상
+            active_users = User.query.filter_by(is_active=True).all()
+            
+            total_processed = 0
+            
+            for user in active_users:
+                try:
+                    # 사용자의 모든 리스트 가져오기
+                    stock_lists = StockList.query.filter_by(user_id=user.id).all()
+                    
+                    if not stock_lists:
+                        continue
+                    
+                    # 미국 종목만 필터링 (.KS로 끝나지 않는 종목들)
+                    us_tickers = []
+                    for stock_list in stock_lists:
+                        for stock in stock_list.stocks:
+                            if not stock.ticker.endswith('.KS'):
+                                us_tickers.append(stock.ticker)
+                    
+                    # 중복 제거
+                    unique_us_tickers = list(set(us_tickers))
+                    
+                    if not unique_us_tickers:
+                        logger.info(f"사용자 {user.username}: 분석할 미국 종목이 없습니다.")
+                        continue
+                    
+                    logger.info(f"사용자 {user.username}: {len(unique_us_tickers)}개 미국 종목 분석 시작")
+                    
+                    # 일괄 분석 실행
+                    from services.analysis_service import analyze_ticker_internal
+                    
+                    start_batch_progress(user.id, len(unique_us_tickers), f"자동 미국 종목 분석 - {user.username}")
+                    
+                    for i, ticker in enumerate(unique_us_tickers, 1):
+                        if is_stop_requested(user.id):
+                            logger.info(f"사용자 {user.username} 작업 중단 요청")
+                            break
+                        
+                        logger.info(f"미국 종목 분석: {i}/{len(unique_us_tickers)} - {ticker}")
+                        update_progress(user.id, ticker, i, len(unique_us_tickers), f"자동 미국 종목 분석 - {user.username}")
+                        
+                        analyze_ticker_internal(ticker, user_id=user.id)
+                        total_processed += 1
+                    
+                    end_batch_progress(user.id)
+                    logger.info(f"사용자 {user.username}: 미국 종목 분석 완료 ({len(unique_us_tickers)}개)")
+                    
+                except Exception as e:
+                    logger.error(f"사용자 {user.username} 미국 종목 분석 오류: {e}")
+                    continue
+            
+            # 분석 완료 후 뉴스레터 발송
+            send_automated_newsletter.delay('us_stocks')
+            
+            result = f"미국 종목 자동 분석 완료: 총 {total_processed}개 종목 처리"
+            logger.info(result)
+            
+            return {
+                'success': True,
+                'message': result,
+                'processed_count': total_processed
+            }
+            
+    except Exception as e:
+        logger.error(f"미국 종목 자동 분석 태스크 오류: {e}")
+        return {
+            'success': False,
+            'message': str(e)
+        }
+
+@celery_app.task(bind=True)
+def auto_analyze_korean_stocks(self):
+    """한국 종목 자동 분석 (KST 18:00)"""
+    try:
+        logger.info("=== 한국 종목 자동 분석 시작 ===")
+        
+        from app import app
+        with app.app_context():
+            # 모든 활성 사용자 대상
+            active_users = User.query.filter_by(is_active=True).all()
+            
+            total_processed = 0
+            
+            for user in active_users:
+                try:
+                    # 사용자의 모든 리스트 가져오기
+                    stock_lists = StockList.query.filter_by(user_id=user.id).all()
+                    
+                    if not stock_lists:
+                        continue
+                    
+                    # 한국 종목만 필터링 (.KS로 끝나는 종목들)
+                    korean_tickers = []
+                    for stock_list in stock_lists:
+                        for stock in stock_list.stocks:
+                            if stock.ticker.endswith('.KS'):
+                                korean_tickers.append(stock.ticker)
+                    
+                    # 중복 제거
+                    unique_korean_tickers = list(set(korean_tickers))
+                    
+                    if not unique_korean_tickers:
+                        logger.info(f"사용자 {user.username}: 분석할 한국 종목이 없습니다.")
+                        continue
+                    
+                    logger.info(f"사용자 {user.username}: {len(unique_korean_tickers)}개 한국 종목 분석 시작")
+                    
+                    # 일괄 분석 실행
+                    from services.analysis_service import analyze_ticker_internal
+                    
+                    start_batch_progress(user.id, len(unique_korean_tickers), f"자동 한국 종목 분석 - {user.username}")
+                    
+                    for i, ticker in enumerate(unique_korean_tickers, 1):
+                        if is_stop_requested(user.id):
+                            logger.info(f"사용자 {user.username} 작업 중단 요청")
+                            break
+                        
+                        logger.info(f"한국 종목 분석: {i}/{len(unique_korean_tickers)} - {ticker}")
+                        update_progress(user.id, ticker, i, len(unique_korean_tickers), f"자동 한국 종목 분석 - {user.username}")
+                        
+                        analyze_ticker_internal(ticker, user_id=user.id)
+                        total_processed += 1
+                    
+                    end_batch_progress(user.id)
+                    logger.info(f"사용자 {user.username}: 한국 종목 분석 완료 ({len(unique_korean_tickers)}개)")
+                    
+                except Exception as e:
+                    logger.error(f"사용자 {user.username} 한국 종목 분석 오류: {e}")
+                    continue
+            
+            # 분석 완료 후 뉴스레터 발송
+            send_automated_newsletter.delay('korean_stocks')
+            
+            result = f"한국 종목 자동 분석 완료: 총 {total_processed}개 종목 처리"
+            logger.info(result)
+            
+            return {
+                'success': True,
+                'message': result,
+                'processed_count': total_processed
+            }
+            
+    except Exception as e:
+        logger.error(f"한국 종목 자동 분석 태스크 오류: {e}")
+        return {
+            'success': False,
+            'message': str(e)
+        }
+
+@celery_app.task(bind=True)
+def send_automated_newsletter(self, market_type='all'):
+    """자동 분석 완료 후 뉴스레터 발송"""
+    try:
+        logger.info(f"=== 자동 뉴스레터 발송 시작: {market_type} ===")
+        
+        from app import app
+        with app.app_context():
+            # 활성 구독자 찾기 (자동 뉴스레터 구독자)
+            active_users = User.query.filter_by(is_active=True).all()
+            
+            success_count = 0
+            error_count = 0
+            
+            for user in active_users:
+                try:
+                    # 사용자의 종목 리스트 확인
+                    stock_lists = StockList.query.filter_by(user_id=user.id).all()
+                    
+                    if not stock_lists:
+                        continue
+                    
+                    # 시장별 필터링
+                    if market_type == 'us_stocks':
+                        # 미국 종목이 있는 사용자만
+                        has_us_stocks = any(
+                            any(not stock.ticker.endswith('.KS') for stock in stock_list.stocks)
+                            for stock_list in stock_lists
+                        )
+                        if not has_us_stocks:
+                            continue
+                        subject_prefix = "🇺🇸 미국 시장"
+                        
+                    elif market_type == 'korean_stocks':
+                        # 한국 종목이 있는 사용자만
+                        has_korean_stocks = any(
+                            any(stock.ticker.endswith('.KS') for stock in stock_list.stocks)
+                            for stock_list in stock_lists
+                        )
+                        if not has_korean_stocks:
+                            continue
+                        subject_prefix = "🇰🇷 한국 시장"
+                    else:
+                        subject_prefix = "📊 종합"
+                    
+                    # 통합 뉴스레터 콘텐츠 생성
+                    content = newsletter_service.generate_multi_list_newsletter_content(user, stock_lists)
+                    
+                    if not content:
+                        logger.warning(f"사용자 {user.username}: 뉴스레터 콘텐츠 생성 실패")
+                        error_count += 1
+                        continue
+                    
+                    # 이메일 제목 생성
+                    now = datetime.now()
+                    subject = f"{subject_prefix} 자동 분석 리포트 - {user.get_full_name()}님 ({now.strftime('%m/%d')})"
+                    
+                    # 이메일 발송
+                    success, result = email_service.send_newsletter(
+                        user, subject, content['html'], content['text']
+                    )
+                    
+                    if success:
+                        success_count += 1
+                        logger.info(f"자동 뉴스레터 발송 성공: {user.email} ({market_type})")
+                    else:
+                        error_count += 1
+                        logger.error(f"자동 뉴스레터 발송 실패: {user.email} - {result}")
+                    
+                except Exception as e:
+                    error_count += 1
+                    logger.error(f"사용자 {user.username} 자동 뉴스레터 발송 오류: {e}")
+            
+            result = f"{market_type} 자동 뉴스레터 발송 완료: 성공 {success_count}건, 실패 {error_count}건"
+            logger.info(result)
+            
+            return {
+                'success': True,
+                'message': result,
+                'success_count': success_count,
+                'error_count': error_count,
+                'market_type': market_type
+            }
+            
+    except Exception as e:
+        logger.error(f"자동 뉴스레터 발송 태스크 오류: {e}")
+        return {
+            'success': False,
+            'message': str(e)
+        } 

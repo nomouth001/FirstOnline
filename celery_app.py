@@ -42,6 +42,22 @@ celery_app.conf.beat_schedule = {
         'task': 'tasks.newsletter_tasks.send_monthly_newsletters',
         'schedule': crontab(day_of_month=1, hour=9, minute=0),  # 매월 1일 오전 9시
     },
+    'auto-analyze-us-stocks': {
+        'task': 'tasks.newsletter_tasks.auto_analyze_us_stocks',
+        'schedule': crontab(
+            day_of_week='1-5',  # 월요일~금요일 (1=월, 2=화, 3=수, 4=목, 5=금)
+            hour=8,             # 한국시간 08:00 (= EST 18:00 전날)
+            minute=0
+        ),
+    },
+    'auto-analyze-korean-stocks': {
+        'task': 'tasks.newsletter_tasks.auto_analyze_korean_stocks',
+        'schedule': crontab(
+            day_of_week='1-5',  # 월요일~금요일
+            hour=18,            # 한국시간 18:00 (= KST 18:00)
+            minute=0
+        ),
+    },
 }
 
 if __name__ == '__main__':

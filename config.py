@@ -1,6 +1,19 @@
 import os
 from datetime import timedelta
 
+# .env 파일 로드 (python-dotenv 사용)
+try:
+    from dotenv import load_dotenv
+    # .env 파일 경로 설정
+    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
+    if os.path.exists(env_path):
+        load_dotenv(env_path)
+        print(f"✅ .env 파일 로드 완료: {env_path}")
+    else:
+        print(f"⚠️  .env 파일 없음: {env_path}")
+except ImportError:
+    print("⚠️  python-dotenv 패키지가 설치되지 않음. pip install python-dotenv")
+
 # 기본 설정
 SECRET_KEY = os.getenv('SECRET_KEY', 'your-secret-key-here')
 DEBUG = os.getenv('FLASK_DEBUG', 'False').lower() == 'true'

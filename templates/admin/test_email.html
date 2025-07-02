@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block title %}이메일 발송 테스트{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h4>📧 SendGrid 이메일 발송 테스트</h4>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info">
+                        <strong>ℹ️ 테스트 목적:</strong>
+                        <ul class="mb-0 mt-2">
+                            <li>SendGrid API 키가 올바르게 설정되었는지 확인</li>
+                            <li>도메인 인증이 정상적으로 작동하는지 확인</li>
+                            <li>이메일 발송 기능이 정상적으로 작동하는지 확인</li>
+                        </ul>
+                    </div>
+                    
+                    <form method="POST">
+                        <div class="mb-3">
+                            <label for="test_email" class="form-label">테스트 이메일 주소</label>
+                            <input type="email" class="form-control" id="test_email" name="test_email" 
+                                   placeholder="test@example.com" required>
+                            <div class="form-text">
+                                테스트 이메일을 받을 이메일 주소를 입력하세요.
+                            </div>
+                        </div>
+                        
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-primary">
+                                📤 테스트 이메일 발송
+                            </button>
+                        </div>
+                    </form>
+                    
+                    <hr class="my-4">
+                    
+                    <div class="alert alert-warning">
+                        <h6><strong>⚠️ 참고사항:</strong></h6>
+                        <ul class="mb-0">
+                            <li><strong>Single Sender Verification</strong>이 완료되어야 이메일 발송이 가능합니다.</li>
+                            <li><strong>API Key</strong>가 환경변수에 올바르게 설정되어야 합니다.</li>
+                            <li>스팸 폴더도 확인해보세요.</li>
+                            <li>이메일 도착까지 1-2분 정도 소요될 수 있습니다.</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="text-center mt-3">
+                        <a href="{{ url_for('admin.dashboard') }}" class="btn btn-secondary">
+                            🔙 관리자 대시보드로 돌아가기
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

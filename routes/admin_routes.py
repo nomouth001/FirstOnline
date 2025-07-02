@@ -544,4 +544,175 @@ def cleanup_debug_files():
     except Exception as e:
         logger.error(f"Debug 파일 정리 중 오류: {e}")
         flash('Debug 파일 정리 중 오류가 발생했습니다.', 'error')
-        return redirect(url_for('admin.dashboard')) 
+        return redirect(url_for('admin.dashboard'))
+
+@admin_bp.route('/test-email', methods=['GET', 'POST'])
+@login_required
+def test_email():
+    """이메일 발송 테스트 (관리자 전용)"""
+    if not current_user.is_administrator():
+        flash('관리자만 접근할 수 있습니다.', 'error')
+        return redirect(url_for('auth.login'))
+    
+    if request.method == 'POST':
+        test_email = request.form.get('test_email')
+        if not test_email:
+            flash('테스트 이메일 주소를 입력하세요.', 'error')
+            return redirect(url_for('admin.test_email'))
+        
+        try:
+            from services.email_service import EmailService
+            from models import User
+            
+            # 임시 사용자 객체 생성 (테스트용)
+            class TestUser:
+                def __init__(self, email):
+                    self.email = email
+                    self.username = "테스트사용자"
+                
+                def get_full_name(self):
+                    return "테스트 사용자"
+            
+            test_user = TestUser(test_email)
+            email_service = EmailService()
+            
+            # 테스트 이메일 발송
+            subject = "SendGrid 테스트 이메일"
+            html_content = """
+            <html>
+            <body>
+                <h2>🎉 SendGrid 설정 성공!</h2>
+                <p>안녕하세요!</p>
+                <p>이 이메일이 정상적으로 도착했다면 <strong>SendGrid 설정이 완료</strong>되었습니다.</p>
+                <p>이제 뉴스레터 시스템이 정상적으로 이메일을 발송할 수 있습니다.</p>
+                <br>
+                <p style="color: #007bff;"><strong>WhatsNextStock 팀</strong></p>
+            </body>
+            </html>
+            """
+            
+            text_content = """
+            SendGrid 설정 성공!
+            
+            안녕하세요!
+            
+            이 이메일이 정상적으로 도착했다면 SendGrid 설정이 완료되었습니다.
+            이제 뉴스레터 시스템이 정상적으로 이메일을 발송할 수 있습니다.
+            
+            WhatsNextStock 팀
+            """
+            
+            success, result = email_service.send_newsletter(test_user, subject, html_content, text_content)
+            
+            if success:
+                flash(f'✅ 테스트 이메일이 성공적으로 발송되었습니다! ({test_email})', 'success')
+            else:
+                flash(f'❌ 이메일 발송 실패: {result}', 'error')
+                
+        except Exception as e:
+            flash(f'❌ 이메일 발송 중 오류: {str(e)}', 'error')
+        
+        return redirect(url_for('admin.test_email'))
+    
+    return render_template('admin/test_email.html')
+
+@admin_bp.route('/test_automation')
+@login_required
+@admin_required
+def test_automation():
+    """자동화 시스템 테스트 페이지"""
+    return render_template('admin/test_automation.html')
+
+@admin_bp.route('/manual_us_analysis')
+@login_required
+@admin_required
+def manual_us_analysis():
+    """수동으로 미국 종목 분석 실행"""
+    try:
+        from tasks.newsletter_tasks import auto_analyze_us_stocks
+        
+        # 비동기 태스크 실행
+        task = auto_analyze_us_stocks.delay()
+        
+        flash('미국 종목 자동 분석이 시작되었습니다. 작업 ID: ' + task.id, 'success')
+        logger.info(f"관리자 {current_user.username}이 미국 종목 수동 분석을 시작했습니다. Task ID: {task.id}")
+        
+        return jsonify({
+            'success': True,
+            'message': '미국 종목 자동 분석이 시작되었습니다.',
+            'task_id': task.id
+        })
+        
+    except Exception as e:
+        logger.error(f"미국 종목 수동 분석 시작 오류: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'오류 발생: {str(e)}'
+        }), 500
+
+@admin_bp.route('/manual_korean_analysis')
+@login_required
+@admin_required
+def manual_korean_analysis():
+    """수동으로 한국 종목 분석 실행"""
+    try:
+        from tasks.newsletter_tasks import auto_analyze_korean_stocks
+        
+        # 비동기 태스크 실행
+        task = auto_analyze_korean_stocks.delay()
+        
+        flash('한국 종목 자동 분석이 시작되었습니다. 작업 ID: ' + task.id, 'success')
+        logger.info(f"관리자 {current_user.username}이 한국 종목 수동 분석을 시작했습니다. Task ID: {task.id}")
+        
+        return jsonify({
+            'success': True,
+            'message': '한국 종목 자동 분석이 시작되었습니다.',
+            'task_id': task.id
+        })
+        
+    except Exception as e:
+        logger.error(f"한국 종목 수동 분석 시작 오류: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'오류 발생: {str(e)}'
+        }), 500
+
+@admin_bp.route('/manual_auto_newsletter/<market_type>')
+@login_required
+@admin_required
+def manual_auto_newsletter(market_type):
+    """수동으로 자동 뉴스레터 발송"""
+    try:
+        from tasks.newsletter_tasks import send_automated_newsletter
+        
+        if market_type not in ['us_stocks', 'korean_stocks', 'all']:
+            return jsonify({
+                'success': False,
+                'message': '잘못된 시장 타입입니다.'
+            }), 400
+        
+        # 비동기 태스크 실행
+        task = send_automated_newsletter.delay(market_type)
+        
+        market_names = {
+            'us_stocks': '미국 시장',
+            'korean_stocks': '한국 시장',
+            'all': '전체 시장'
+        }
+        
+        message = f'{market_names[market_type]} 자동 뉴스레터 발송이 시작되었습니다.'
+        flash(message + f' 작업 ID: {task.id}', 'success')
+        logger.info(f"관리자 {current_user.username}이 {market_names[market_type]} 수동 뉴스레터 발송을 시작했습니다. Task ID: {task.id}")
+        
+        return jsonify({
+            'success': True,
+            'message': message,
+            'task_id': task.id
+        })
+        
+    except Exception as e:
+        logger.error(f"{market_type} 수동 뉴스레터 발송 시작 오류: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'오류 발생: {str(e)}'
+        }), 500 

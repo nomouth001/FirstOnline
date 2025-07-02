@@ -300,7 +300,7 @@ def bulk_generate(list_id):
 @user_stock_bp.route('/lookup-ticker')
 @login_required
 def lookup_ticker():
-    """종목 코드 조회"""
+    """종목 코드 조회 - 한국 종목 자동 .KS 붙이기"""
     from flask import Response
     import json
     
@@ -316,6 +316,12 @@ def lookup_ticker():
             return error_response
 
         logger.info(f"종목 조회 요청: '{ticker}' (사용자: {current_user.username})")
+
+        # 한국 종목 처리: 6자리 숫자면 .KS 자동 붙이기
+        original_ticker = ticker
+        if ticker.isdigit() and len(ticker) == 6:
+            ticker = f"{ticker}.KS"
+            logger.info(f"한국 종목 자동 변환: {original_ticker} → {ticker} (사용자: {current_user.username})")
 
         stock_info = yf.Ticker(ticker).info
         name = stock_info.get("longName") or stock_info.get("shortName")
@@ -343,6 +349,35 @@ def lookup_ticker():
             )
             return response
         else:
+            # .KS를 붙였는데도 못 찾으면 원래 ticker로 재시도
+            if ticker.endswith('.KS') and original_ticker != ticker:
+                logger.info(f"한국 종목 조회 실패, 원래 ticker로 재시도: {original_ticker} (사용자: {current_user.username})")
+                stock_info = yf.Ticker(original_ticker).info
+                name = stock_info.get("longName") or stock_info.get("shortName")
+                sector = stock_info.get("sector", "")
+                industry = stock_info.get("industry", "")
+                market_cap = stock_info.get("marketCap", 0)
+                country = stock_info.get("country", "")
+                
+                if name:
+                    result = {
+                        "ticker": original_ticker, 
+                        "name": name,
+                        "sector": sector,
+                        "industry": industry,
+                        "market_cap": market_cap,
+                        "country": country,
+                        "success": True
+                    }
+                    logger.info(f"원래 ticker로 조회 성공: {original_ticker} -> {name} (사용자: {current_user.username})")
+                    
+                    response = Response(
+                        json.dumps(result, ensure_ascii=False),
+                        mimetype='application/json',
+                        headers={'Content-Type': 'application/json; charset=utf-8'}
+                    )
+                    return response
+            
             error_result = {"name": None, "message": "종목을 찾을 수 없습니다.", "success": False}
             logger.warning(f"종목 조회 실패: {ticker} - 종목을 찾을 수 없음 (사용자: {current_user.username})")
             

@@ -224,18 +224,32 @@ def get_tickers():
 @stock_bp.route("/lookup")
 @login_required
 def lookup_ticker():
-    """종목 코드 검색"""
+    """종목 코드 검색 - 한국 종목 자동 .KS 붙이기"""
     ticker = request.args.get("ticker", "").upper()
     if not ticker:
         return jsonify({"error": "Ticker is required"}), 400
 
     try:
+        # 한국 종목 처리: 6자리 숫자면 .KS 자동 붙이기
+        original_ticker = ticker
+        if ticker.isdigit() and len(ticker) == 6:
+            ticker = f"{ticker}.KS"
+            logging.info(f"한국 종목 자동 변환: {original_ticker} → {ticker}")
+        
         stock_info = yf.Ticker(ticker).info
         name = stock_info.get("longName") or stock_info.get("shortName")
 
         if name:
             return jsonify({"ticker": ticker, "name": name})
         else:
+            # .KS를 붙였는데도 못 찾으면 원래 ticker로 재시도
+            if ticker.endswith('.KS') and original_ticker != ticker:
+                logging.info(f"한국 종목 조회 실패, 원래 ticker로 재시도: {original_ticker}")
+                stock_info = yf.Ticker(original_ticker).info
+                name = stock_info.get("longName") or stock_info.get("shortName")
+                if name:
+                    return jsonify({"ticker": original_ticker, "name": name})
+            
             return jsonify({"name": None, "message": "Ticker not found or no name available."}), 404
     except Exception as e:
         logging.error(f"Error looking up ticker {ticker}: {e}")

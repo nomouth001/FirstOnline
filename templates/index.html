@@ -147,6 +147,8 @@
 
   let progressInterval = null;
 
+  console.log("✅ JavaScript 로드 완료 - Form 이벤트 리스너 등록 준비");
+
   // 실시간 진행상황 업데이트 함수
   async function updateProgressDisplay() {
     try {
@@ -419,8 +421,11 @@
   }
 
   document.getElementById("ticker-form").addEventListener("submit", async (e) => {
+    console.log("🔍 Form submit 이벤트 발생! JavaScript 정상 작동 중");
     e.preventDefault();
+    console.log("🛑 기본 form submit 동작 차단됨");
     const ticker = document.getElementById("ticker").value.toUpperCase();
+    console.log("📊 조회할 종목:", ticker);
     const lookupResultDiv = document.getElementById("lookup-result");
     lookupResultDiv.innerHTML = `<p>조회 중...</p>`;
 
@@ -444,6 +449,8 @@
         console.error("Lookup error:", error);
     }
   });
+
+  console.log("🎯 Form submit 이벤트 리스너 등록 완료!");
 
   async function addTicker(ticker, name) {
     try {

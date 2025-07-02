@@ -3,17 +3,52 @@ from datetime import datetime, time, timezone, timedelta
 import pytz
 from celery import current_task
 from celery_app import celery_app
+import os
+import sys
 
 logger = logging.getLogger(__name__)
 
 def get_flask_app():
-    """Flask app 인스턴스 가져오기"""
+    """Flask app 인스턴스 가져오기 - 여러 방법으로 시도"""
     try:
+        # 방법 1: 현재 디렉토리에서 직접 import
         from app import app
+        logger.info("✅ Flask app 로드 성공 (현재 디렉토리)")
         return app
     except ImportError:
-        logger.error("Flask app을 import할 수 없습니다. app.py가 존재하는지 확인하세요.")
-        return None
+        logger.warning("현재 디렉토리에서 app.py를 찾을 수 없음")
+    
+    try:
+        # 방법 2: 절대 경로 추가 후 import  
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        parent_dir = os.path.dirname(current_dir)  # tasks 폴더의 부모 디렉토리
+        if parent_dir not in sys.path:
+            sys.path.insert(0, parent_dir)
+        
+        from app import app
+        logger.info("✅ Flask app 로드 성공 (절대 경로)")
+        return app
+    except ImportError:
+        logger.warning("절대 경로에서도 app.py를 찾을 수 없음")
+    
+    try:
+        # 방법 3: /home/ubuntu/newsletter-app 경로에서 시도
+        app_dir = '/home/ubuntu/newsletter-app'
+        if app_dir not in sys.path:
+            sys.path.insert(0, app_dir)
+        
+        from app import app
+        logger.info("✅ Flask app 로드 성공 (고정 경로)")
+        return app
+    except ImportError:
+        logger.error("모든 방법으로 Flask app 로드 실패")
+    
+    # 디버깅 정보 출력
+    logger.error(f"현재 작업 디렉토리: {os.getcwd()}")
+    logger.error(f"Python 경로: {sys.path}")
+    logger.error(f"파일 위치: {__file__}")
+    
+    return None
 
 @celery_app.task(bind=True)
 def send_daily_newsletters(self):

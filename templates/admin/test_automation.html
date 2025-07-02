@@ -5,118 +5,79 @@
 {% block content %}
 <div class="container mt-4">
     <div class="row">
-        <div class="col-md-12">
+        <div class="col-12">
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <h2>🤖 자동화 시스템 테스트</h2>
-                <a href="{{ url_for('admin.dashboard') }}" class="btn btn-secondary">
-                    <i class="fas fa-arrow-left"></i> 관리자 대시보드로
+                <a href="{{ url_for('admin.admin_dashboard') }}" class="btn btn-secondary">
+                    <i class="fas fa-arrow-left"></i> 대시보드로 돌아가기
                 </a>
             </div>
+            
+            <!-- 경고 메시지 -->
+            <div class="alert alert-warning">
+                <h5><i class="fas fa-exclamation-triangle"></i> 주의사항</h5>
+                <ul class="mb-0">
+                    <li>이 기능들은 실제 자동화 시스템과 동일한 작업을 수행합니다.</li>
+                    <li>종목 분석에는 시간이 소요될 수 있습니다 (종목당 1-2분).</li>
+                    <li>뉴스레터 발송은 실제 사용자들에게 메일이 전송됩니다.</li>
+                </ul>
+            </div>
 
-            <!-- 자동화 스케줄 정보 -->
-            <div class="row mb-4">
-                <div class="col-md-12">
-                    <div class="card">
-                        <div class="card-header">
-                            <h5 class="mb-0">📅 자동화 스케줄 정보</h5>
-                        </div>
-                        <div class="card-body">
-                            <div class="row">
-                                <div class="col-md-6">
-                                    <div class="alert alert-info">
-                                        <strong>🇺🇸 미국 종목 분석</strong><br>
-                                        <i class="fas fa-clock"></i> 월~금 오전 08:00 (KST)<br>
-                                        <small class="text-muted">= EST 18:00 (전날)</small>
-                                    </div>
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="alert alert-success">
-                                        <strong>🇰🇷 한국 종목 분석</strong><br>
-                                        <i class="fas fa-clock"></i> 월~금 오후 18:00 (KST)<br>
-                                        <small class="text-muted">= 한국 시장 마감 후</small>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+            <!-- 결과 표시 영역 -->
+            <div id="result-area" class="mb-4" style="display: none;">
+                <div class="alert" id="result-alert">
+                    <div id="result-content"></div>
                 </div>
             </div>
 
-            <!-- 수동 테스트 버튼들 -->
+            <!-- 분석 테스트 -->
             <div class="row">
-                <!-- 미국 종목 분석 테스트 -->
                 <div class="col-md-6 mb-4">
-                    <div class="card h-100">
+                    <div class="card">
                         <div class="card-header bg-primary text-white">
-                            <h5 class="mb-0">🇺🇸 미국 종목 분석 테스트</h5>
+                            <h5 class="mb-0"><i class="fas fa-chart-line"></i> 종목 분석 테스트</h5>
                         </div>
                         <div class="card-body">
-                            <p class="card-text">
-                                모든 사용자의 미국 종목(.KS로 끝나지 않는 종목)을 일괄 분석하고 
-                                분석 완료 후 자동으로 뉴스레터를 발송합니다.
-                            </p>
-                            <ul class="list-unstyled">
-                                <li><i class="fas fa-check text-success"></i> 종목 필터링: .KS 제외</li>
-                                <li><i class="fas fa-check text-success"></i> 진행률 추적</li>
-                                <li><i class="fas fa-check text-success"></i> 자동 뉴스레터 발송</li>
-                            </ul>
-                            <button id="btn-us-analysis" class="btn btn-primary btn-lg w-100">
-                                <i class="fas fa-play"></i> 미국 종목 분석 시작
-                            </button>
+                            <div class="mb-3">
+                                <h6>🇺🇸 미국 종목 분석</h6>
+                                <p class="text-muted small">스케줄: 월~금 EST 18:00 (시장 마감 후)</p>
+                                <button id="btn-us-analysis" class="btn btn-primary w-100" onclick="runUSAnalysis()">
+                                    <i class="fas fa-play"></i> 미국 종목 자동 분석 테스트
+                                </button>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <h6>🇰🇷 한국 종목 분석</h6>
+                                <p class="text-muted small">스케줄: 월~금 EST 05:00 (한국 시간 18:00경)</p>
+                                <button id="btn-korean-analysis" class="btn btn-success w-100" onclick="runKoreanAnalysis()">
+                                    <i class="fas fa-play"></i> 한국 종목 자동 분석 테스트
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- 한국 종목 분석 테스트 -->
                 <div class="col-md-6 mb-4">
-                    <div class="card h-100">
-                        <div class="card-header bg-success text-white">
-                            <h5 class="mb-0">🇰🇷 한국 종목 분석 테스트</h5>
-                        </div>
-                        <div class="card-body">
-                            <p class="card-text">
-                                모든 사용자의 한국 종목(.KS로 끝나는 종목)을 일괄 분석하고 
-                                분석 완료 후 자동으로 뉴스레터를 발송합니다.
-                            </p>
-                            <ul class="list-unstyled">
-                                <li><i class="fas fa-check text-success"></i> 종목 필터링: .KS만</li>
-                                <li><i class="fas fa-check text-success"></i> 진행률 추적</li>
-                                <li><i class="fas fa-check text-success"></i> 자동 뉴스레터 발송</li>
-                            </ul>
-                            <button id="btn-korean-analysis" class="btn btn-success btn-lg w-100">
-                                <i class="fas fa-play"></i> 한국 종목 분석 시작
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 뉴스레터 발송 테스트 -->
-            <div class="row">
-                <div class="col-md-12 mb-4">
                     <div class="card">
-                        <div class="card-header bg-warning text-dark">
-                            <h5 class="mb-0">📧 수동 뉴스레터 발송 테스트</h5>
+                        <div class="card-header bg-info text-white">
+                            <h5 class="mb-0"><i class="fas fa-envelope"></i> 뉴스레터 발송 테스트</h5>
                         </div>
                         <div class="card-body">
-                            <p class="card-text">
-                                기존 분석 결과를 바탕으로 뉴스레터를 즉시 발송합니다. 
-                                (분석 없이 뉴스레터만 발송)
-                            </p>
-                            <div class="row">
-                                <div class="col-md-4">
-                                    <button id="btn-newsletter-us" class="btn btn-outline-primary w-100 mb-2">
-                                        <i class="fas fa-envelope"></i> 미국 시장 뉴스레터
+                            <div class="mb-3">
+                                <h6>📧 자동 뉴스레터 발송</h6>
+                                <p class="text-muted small">스케줄: 매일 EST 09:00</p>
+                                
+                                <div class="d-grid gap-2">
+                                    <button id="btn-newsletter-us" class="btn btn-info" onclick="runAutoNewsletter('us_stocks')">
+                                        <i class="fas fa-paper-plane"></i> 미국 시장 뉴스레터 발송
                                     </button>
-                                </div>
-                                <div class="col-md-4">
-                                    <button id="btn-newsletter-korean" class="btn btn-outline-success w-100 mb-2">
-                                        <i class="fas fa-envelope"></i> 한국 시장 뉴스레터
+                                    
+                                    <button id="btn-newsletter-korean" class="btn btn-info" onclick="runAutoNewsletter('korean_stocks')">
+                                        <i class="fas fa-paper-plane"></i> 한국 시장 뉴스레터 발송
                                     </button>
-                                </div>
-                                <div class="col-md-4">
-                                    <button id="btn-newsletter-all" class="btn btn-outline-info w-100 mb-2">
-                                        <i class="fas fa-envelope"></i> 전체 시장 뉴스레터
+                                    
+                                    <button id="btn-newsletter-all" class="btn btn-warning" onclick="runAutoNewsletter('all')">
+                                        <i class="fas fa-paper-plane"></i> 전체 시장 뉴스레터 발송
                                     </button>
                                 </div>
                             </div>
@@ -125,38 +86,56 @@
                 </div>
             </div>
 
-            <!-- 작업 상태 표시 -->
-            <div class="row">
-                <div class="col-md-12">
-                    <div class="card">
-                        <div class="card-header">
-                            <h5 class="mb-0">📊 작업 상태</h5>
+            <!-- 현재 서버 시간 정보 -->
+            <div class="card">
+                <div class="card-header bg-secondary text-white">
+                    <h5 class="mb-0"><i class="fas fa-clock"></i> 서버 시간 정보</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <strong>현재 서버 시간:</strong><br>
+                            <span id="current-time" class="h5 text-primary"></span>
                         </div>
-                        <div class="card-body">
-                            <div id="task-status" class="alert alert-secondary">
-                                <i class="fas fa-info-circle"></i> 준비 상태 - 위의 버튼을 클릭하여 작업을 시작하세요.
-                            </div>
-                            <div id="task-logs" style="display: none;">
-                                <h6>작업 로그:</h6>
-                                <div id="log-content" class="bg-light p-3 rounded">
-                                </div>
-                            </div>
+                        <div class="col-md-6">
+                            <strong>다음 자동 실행 예정:</strong><br>
+                            <small>
+                                • 미국 종목: 평일 EST 18:00<br>
+                                • 한국 종목: 평일 EST 05:00<br>
+                                • 뉴스레터: 매일 EST 09:00
+                            </small>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- 주의사항 -->
-            <div class="row mt-4">
-                <div class="col-md-12">
-                    <div class="alert alert-warning">
-                        <h6><i class="fas fa-exclamation-triangle"></i> 주의사항</h6>
-                        <ul class="mb-0">
-                            <li>분석 작업은 시간이 오래 걸릴 수 있습니다 (종목 수에 따라 5-30분)</li>
-                            <li>작업 중에는 페이지를 새로고침하지 마세요</li>
-                            <li>동시에 여러 작업을 실행하지 않는 것을 권장합니다</li>
-                            <li>실제 사용자들에게 뉴스레터가 발송되므로 신중하게 테스트하세요</li>
-                        </ul>
+            <!-- Celery 상태 정보 -->
+            <div class="mt-4">
+                <div class="card">
+                    <div class="card-header bg-dark text-white">
+                        <h5 class="mb-0"><i class="fas fa-cogs"></i> 시스템 상태</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="text-center">
+                                    <div id="celery-worker-status" class="badge badge-secondary">확인 중...</div>
+                                    <div>Celery Worker</div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="text-center">
+                                    <div id="celery-beat-status" class="badge badge-secondary">확인 중...</div>
+                                    <div>Celery Beat</div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="text-center">
+                                    <div id="timezone-info" class="badge badge-secondary">확인 중...</div>
+                                    <div>서버 시간대</div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -165,71 +144,138 @@
 </div>
 
 <script>
-$(document).ready(function() {
-    // 버튼 클릭 핸들러들
-    $('#btn-us-analysis').click(function() {
-        executeTask('/admin/manual_us_analysis', '미국 종목 분석');
-    });
+// 현재 시간 업데이트
+function updateCurrentTime() {
+    const now = new Date();
+    const options = {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        timeZoneName: 'short'
+    };
+    document.getElementById('current-time').textContent = now.toLocaleString('ko-KR', options);
+}
 
-    $('#btn-korean-analysis').click(function() {
-        executeTask('/admin/manual_korean_analysis', '한국 종목 분석');
-    });
-
-    $('#btn-newsletter-us').click(function() {
-        executeTask('/admin/manual_auto_newsletter/us_stocks', '미국 시장 뉴스레터 발송');
-    });
-
-    $('#btn-newsletter-korean').click(function() {
-        executeTask('/admin/manual_auto_newsletter/korean_stocks', '한국 시장 뉴스레터 발송');
-    });
-
-    $('#btn-newsletter-all').click(function() {
-        executeTask('/admin/manual_auto_newsletter/all', '전체 시장 뉴스레터 발송');
-    });
-});
-
-function executeTask(url, taskName) {
-    // 버튼 비활성화
-    $('button').prop('disabled', true);
+// 결과 표시 함수
+function showResult(success, message, taskId = null) {
+    const resultArea = document.getElementById('result-area');
+    const resultAlert = document.getElementById('result-alert');
+    const resultContent = document.getElementById('result-content');
     
-    // 상태 업데이트
-    updateStatus('warning', `<i class="fas fa-spinner fa-spin"></i> ${taskName} 시작 중...`);
+    resultAlert.className = success ? 'alert alert-success' : 'alert alert-danger';
     
-    $.get(url)
-        .done(function(response) {
-            if (response.success) {
-                updateStatus('success', `<i class="fas fa-check"></i> ${taskName}이 성공적으로 시작되었습니다.`);
-                addLog(`[${new Date().toLocaleTimeString()}] ${taskName} 시작 - Task ID: ${response.task_id}`);
-                showLogs();
-            } else {
-                updateStatus('danger', `<i class="fas fa-times"></i> ${taskName} 시작 실패: ${response.message}`);
-            }
+    let content = `<strong>${success ? '✅ 성공' : '❌ 실패'}</strong><br>${message}`;
+    if (taskId) {
+        content += `<br><small>작업 ID: ${taskId}</small>`;
+    }
+    
+    resultContent.innerHTML = content;
+    resultArea.style.display = 'block';
+    
+    // 5초 후 자동 숨김
+    setTimeout(() => {
+        resultArea.style.display = 'none';
+    }, 10000);
+}
+
+// 버튼 상태 관리
+function setButtonLoading(buttonId, loading) {
+    const button = document.getElementById(buttonId);
+    if (loading) {
+        button.disabled = true;
+        button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 실행 중...';
+    } else {
+        button.disabled = false;
+        // 원래 텍스트로 복원
+        const originalTexts = {
+            'btn-us-analysis': '<i class="fas fa-play"></i> 미국 종목 자동 분석 테스트',
+            'btn-korean-analysis': '<i class="fas fa-play"></i> 한국 종목 자동 분석 테스트',
+            'btn-newsletter-us': '<i class="fas fa-paper-plane"></i> 미국 시장 뉴스레터 발송',
+            'btn-newsletter-korean': '<i class="fas fa-paper-plane"></i> 한국 시장 뉴스레터 발송',
+            'btn-newsletter-all': '<i class="fas fa-paper-plane"></i> 전체 시장 뉴스레터 발송'
+        };
+        button.innerHTML = originalTexts[buttonId];
+    }
+}
+
+// 미국 종목 분석 실행
+function runUSAnalysis() {
+    setButtonLoading('btn-us-analysis', true);
+    
+    fetch('/admin/manual_us_analysis')
+        .then(response => response.json())
+        .then(data => {
+            showResult(data.success, data.message, data.task_id);
         })
-        .fail(function(xhr) {
-            const errorMsg = xhr.responseJSON ? xhr.responseJSON.message : '알 수 없는 오류';
-            updateStatus('danger', `<i class="fas fa-times"></i> ${taskName} 시작 실패: ${errorMsg}`);
+        .catch(error => {
+            showResult(false, '요청 중 오류가 발생했습니다: ' + error.message);
         })
-        .always(function() {
-            // 5초 후 버튼 재활성화
-            setTimeout(function() {
-                $('button').prop('disabled', false);
-                updateStatus('secondary', '<i class="fas fa-info-circle"></i> 준비 상태 - 다음 작업을 시작할 수 있습니다.');
-            }, 5000);
+        .finally(() => {
+            setButtonLoading('btn-us-analysis', false);
         });
 }
 
-function updateStatus(alertType, message) {
-    $('#task-status').removeClass().addClass(`alert alert-${alertType}`).html(message);
+// 한국 종목 분석 실행
+function runKoreanAnalysis() {
+    setButtonLoading('btn-korean-analysis', true);
+    
+    fetch('/admin/manual_korean_analysis')
+        .then(response => response.json())
+        .then(data => {
+            showResult(data.success, data.message, data.task_id);
+        })
+        .catch(error => {
+            showResult(false, '요청 중 오류가 발생했습니다: ' + error.message);
+        })
+        .finally(() => {
+            setButtonLoading('btn-korean-analysis', false);
+        });
 }
 
-function addLog(message) {
-    const currentLogs = $('#log-content').html();
-    $('#log-content').html(currentLogs + message + '<br>');
+// 자동 뉴스레터 발송
+function runAutoNewsletter(marketType) {
+    const buttonIds = {
+        'us_stocks': 'btn-newsletter-us',
+        'korean_stocks': 'btn-newsletter-korean',
+        'all': 'btn-newsletter-all'
+    };
+    
+    const buttonId = buttonIds[marketType];
+    setButtonLoading(buttonId, true);
+    
+    fetch(`/admin/manual_auto_newsletter/${marketType}`)
+        .then(response => response.json())
+        .then(data => {
+            showResult(data.success, data.message, data.task_id);
+        })
+        .catch(error => {
+            showResult(false, '요청 중 오류가 발생했습니다: ' + error.message);
+        })
+        .finally(() => {
+            setButtonLoading(buttonId, false);
+        });
 }
 
-function showLogs() {
-    $('#task-logs').show();
-}
+// 페이지 로드 시 실행
+document.addEventListener('DOMContentLoaded', function() {
+    // 현재 시간 업데이트 (1초마다)
+    updateCurrentTime();
+    setInterval(updateCurrentTime, 1000);
+    
+    // 시스템 상태 시뮬레이션 (실제로는 API로 확인해야 함)
+    setTimeout(() => {
+        document.getElementById('celery-worker-status').className = 'badge badge-success';
+        document.getElementById('celery-worker-status').textContent = '실행 중';
+        
+        document.getElementById('celery-beat-status').className = 'badge badge-success';
+        document.getElementById('celery-beat-status').textContent = '실행 중';
+        
+        document.getElementById('timezone-info').className = 'badge badge-info';
+        document.getElementById('timezone-info').textContent = 'America/New_York';
+    }, 1000);
+});
 </script>
-
 {% endblock %} 

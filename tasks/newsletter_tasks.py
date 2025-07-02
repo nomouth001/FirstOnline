@@ -308,74 +308,81 @@ def run_bulk_analysis_for_user(user_id, list_ids):
 
 @celery_app.task(bind=True)
 def auto_analyze_us_stocks(self):
-    """미국 종목 자동 분석 (EST 18:00 = KST 다음날 08:00)"""
+    """미국 종목 자동 분석 (EST 18:00) - 전역 중복 제거 방식"""
     try:
-        logger.info("=== 미국 종목 자동 분석 시작 ===")
+        logger.info("=== 미국 종목 자동 분석 시작 (전역 중복 제거) ===")
         
         from app import app
         with app.app_context():
-            # 모든 활성 사용자 대상
+            # 1단계: 모든 활성 사용자의 미국 종목 수집
             active_users = User.query.filter_by(is_active=True).all()
             
-            total_processed = 0
+            all_us_tickers = set()  # 전역 중복 제거를 위한 set
+            user_ticker_mapping = {}  # 사용자별 종목 매핑
             
             for user in active_users:
+                user_us_tickers = []
+                stock_lists = StockList.query.filter_by(user_id=user.id).all()
+                
+                for stock_list in stock_lists:
+                    for stock in stock_list.stocks:
+                        if not stock.ticker.endswith('.KS'):  # 미국 종목
+                            user_us_tickers.append(stock.ticker)
+                            all_us_tickers.add(stock.ticker)
+                
+                if user_us_tickers:
+                    user_ticker_mapping[user.id] = list(set(user_us_tickers))  # 사용자별 중복도 제거
+                    logger.info(f"사용자 {user.username}: {len(set(user_us_tickers))}개 미국 종목")
+            
+            unique_us_tickers = list(all_us_tickers)
+            logger.info(f"=== 전체 시스템: {len(unique_us_tickers)}개 고유 미국 종목 분석 시작 ===")
+            
+            if not unique_us_tickers:
+                logger.info("분석할 미국 종목이 없습니다.")
+                return {'success': True, 'message': '분석할 미국 종목 없음', 'processed_count': 0}
+            
+            # 2단계: 전역 중복 제거된 종목들을 한 번씩만 분석
+            from services.analysis_service import analyze_ticker_internal
+            
+            start_batch_progress("system", len(unique_us_tickers), "전체 미국 종목 분석")
+            
+            analyzed_tickers = []
+            failed_tickers = []
+            
+            for i, ticker in enumerate(unique_us_tickers, 1):
+                if is_stop_requested():
+                    logger.info("전체 시스템 작업 중단 요청")
+                    break
+                
+                logger.info(f"미국 종목 분석: {i}/{len(unique_us_tickers)} - {ticker}")
+                update_progress(ticker=ticker, processed=i-1, total=len(unique_us_tickers), list_name="전체 미국 종목 분석")
+                
                 try:
-                    # 사용자의 모든 리스트 가져오기
-                    stock_lists = StockList.query.filter_by(user_id=user.id).all()
-                    
-                    if not stock_lists:
-                        continue
-                    
-                    # 미국 종목만 필터링 (.KS로 끝나지 않는 종목들)
-                    us_tickers = []
-                    for stock_list in stock_lists:
-                        for stock in stock_list.stocks:
-                            if not stock.ticker.endswith('.KS'):
-                                us_tickers.append(stock.ticker)
-                    
-                    # 중복 제거
-                    unique_us_tickers = list(set(us_tickers))
-                    
-                    if not unique_us_tickers:
-                        logger.info(f"사용자 {user.username}: 분석할 미국 종목이 없습니다.")
-                        continue
-                    
-                    logger.info(f"사용자 {user.username}: {len(unique_us_tickers)}개 미국 종목 분석 시작")
-                    
-                    # 일괄 분석 실행
-                    from services.analysis_service import analyze_ticker_internal
-                    
-                    start_batch_progress(user.id, len(unique_us_tickers), f"자동 미국 종목 분석 - {user.username}")
-                    
-                    for i, ticker in enumerate(unique_us_tickers, 1):
-                        if is_stop_requested(user.id):
-                            logger.info(f"사용자 {user.username} 작업 중단 요청")
-                            break
-                        
-                        logger.info(f"미국 종목 분석: {i}/{len(unique_us_tickers)} - {ticker}")
-                        update_progress(user.id, ticker, i, len(unique_us_tickers), f"자동 미국 종목 분석 - {user.username}")
-                        
-                        analyze_ticker_internal(ticker, user_id=user.id)
-                        total_processed += 1
-                    
-                    end_batch_progress(user.id)
-                    logger.info(f"사용자 {user.username}: 미국 종목 분석 완료 ({len(unique_us_tickers)}개)")
-                    
+                    analyze_ticker_internal(ticker)
+                    analyzed_tickers.append(ticker)
+                    logger.info(f"✅ {ticker} 분석 완료")
                 except Exception as e:
-                    logger.error(f"사용자 {user.username} 미국 종목 분석 오류: {e}")
-                    continue
+                    failed_tickers.append(ticker)
+                    logger.error(f"❌ {ticker} 분석 실패: {e}")
+            
+            end_batch_progress()
+            
+            # 3단계: 분석 완료 후 각 사용자별로 뉴스레터 발송
+            logger.info(f"=== 미국 종목 분석 완료: 성공 {len(analyzed_tickers)}개, 실패 {len(failed_tickers)}개 ===")
             
             # 분석 완료 후 뉴스레터 발송
             send_automated_newsletter.delay('us_stocks')
             
-            result = f"미국 종목 자동 분석 완료: 총 {total_processed}개 종목 처리"
+            result = f"미국 종목 자동 분석 완료: 총 {len(analyzed_tickers)}개 종목 성공, {len(failed_tickers)}개 실패"
             logger.info(result)
             
             return {
                 'success': True,
                 'message': result,
-                'processed_count': total_processed
+                'processed_count': len(analyzed_tickers),
+                'failed_count': len(failed_tickers),
+                'total_users': len(user_ticker_mapping),
+                'unique_tickers': len(unique_us_tickers)
             }
             
     except Exception as e:
@@ -387,74 +394,81 @@ def auto_analyze_us_stocks(self):
 
 @celery_app.task(bind=True)
 def auto_analyze_korean_stocks(self):
-    """한국 종목 자동 분석 (KST 18:00)"""
+    """한국 종목 자동 분석 (EST 05:00 = KST 18:00/19:00) - 전역 중복 제거 방식"""
     try:
-        logger.info("=== 한국 종목 자동 분석 시작 ===")
+        logger.info("=== 한국 종목 자동 분석 시작 (전역 중복 제거) ===")
         
         from app import app
         with app.app_context():
-            # 모든 활성 사용자 대상
+            # 1단계: 모든 활성 사용자의 한국 종목 수집
             active_users = User.query.filter_by(is_active=True).all()
             
-            total_processed = 0
+            all_korean_tickers = set()  # 전역 중복 제거를 위한 set
+            user_ticker_mapping = {}  # 사용자별 종목 매핑
             
             for user in active_users:
+                user_korean_tickers = []
+                stock_lists = StockList.query.filter_by(user_id=user.id).all()
+                
+                for stock_list in stock_lists:
+                    for stock in stock_list.stocks:
+                        if stock.ticker.endswith('.KS'):  # 한국 종목
+                            user_korean_tickers.append(stock.ticker)
+                            all_korean_tickers.add(stock.ticker)
+                
+                if user_korean_tickers:
+                    user_ticker_mapping[user.id] = list(set(user_korean_tickers))  # 사용자별 중복도 제거
+                    logger.info(f"사용자 {user.username}: {len(set(user_korean_tickers))}개 한국 종목")
+            
+            unique_korean_tickers = list(all_korean_tickers)
+            logger.info(f"=== 전체 시스템: {len(unique_korean_tickers)}개 고유 한국 종목 분석 시작 ===")
+            
+            if not unique_korean_tickers:
+                logger.info("분석할 한국 종목이 없습니다.")
+                return {'success': True, 'message': '분석할 한국 종목 없음', 'processed_count': 0}
+            
+            # 2단계: 전역 중복 제거된 종목들을 한 번씩만 분석
+            from services.analysis_service import analyze_ticker_internal
+            
+            start_batch_progress("system", len(unique_korean_tickers), "전체 한국 종목 분석")
+            
+            analyzed_tickers = []
+            failed_tickers = []
+            
+            for i, ticker in enumerate(unique_korean_tickers, 1):
+                if is_stop_requested():
+                    logger.info("전체 시스템 작업 중단 요청")
+                    break
+                
+                logger.info(f"한국 종목 분석: {i}/{len(unique_korean_tickers)} - {ticker}")
+                update_progress(ticker=ticker, processed=i-1, total=len(unique_korean_tickers), list_name="전체 한국 종목 분석")
+                
                 try:
-                    # 사용자의 모든 리스트 가져오기
-                    stock_lists = StockList.query.filter_by(user_id=user.id).all()
-                    
-                    if not stock_lists:
-                        continue
-                    
-                    # 한국 종목만 필터링 (.KS로 끝나는 종목들)
-                    korean_tickers = []
-                    for stock_list in stock_lists:
-                        for stock in stock_list.stocks:
-                            if stock.ticker.endswith('.KS'):
-                                korean_tickers.append(stock.ticker)
-                    
-                    # 중복 제거
-                    unique_korean_tickers = list(set(korean_tickers))
-                    
-                    if not unique_korean_tickers:
-                        logger.info(f"사용자 {user.username}: 분석할 한국 종목이 없습니다.")
-                        continue
-                    
-                    logger.info(f"사용자 {user.username}: {len(unique_korean_tickers)}개 한국 종목 분석 시작")
-                    
-                    # 일괄 분석 실행
-                    from services.analysis_service import analyze_ticker_internal
-                    
-                    start_batch_progress(user.id, len(unique_korean_tickers), f"자동 한국 종목 분석 - {user.username}")
-                    
-                    for i, ticker in enumerate(unique_korean_tickers, 1):
-                        if is_stop_requested(user.id):
-                            logger.info(f"사용자 {user.username} 작업 중단 요청")
-                            break
-                        
-                        logger.info(f"한국 종목 분석: {i}/{len(unique_korean_tickers)} - {ticker}")
-                        update_progress(user.id, ticker, i, len(unique_korean_tickers), f"자동 한국 종목 분석 - {user.username}")
-                        
-                        analyze_ticker_internal(ticker, user_id=user.id)
-                        total_processed += 1
-                    
-                    end_batch_progress(user.id)
-                    logger.info(f"사용자 {user.username}: 한국 종목 분석 완료 ({len(unique_korean_tickers)}개)")
-                    
+                    analyze_ticker_internal(ticker)
+                    analyzed_tickers.append(ticker)
+                    logger.info(f"✅ {ticker} 분석 완료")
                 except Exception as e:
-                    logger.error(f"사용자 {user.username} 한국 종목 분석 오류: {e}")
-                    continue
+                    failed_tickers.append(ticker)
+                    logger.error(f"❌ {ticker} 분석 실패: {e}")
+            
+            end_batch_progress()
+            
+            # 3단계: 분석 완료 후 각 사용자별로 뉴스레터 발송
+            logger.info(f"=== 한국 종목 분석 완료: 성공 {len(analyzed_tickers)}개, 실패 {len(failed_tickers)}개 ===")
             
             # 분석 완료 후 뉴스레터 발송
             send_automated_newsletter.delay('korean_stocks')
             
-            result = f"한국 종목 자동 분석 완료: 총 {total_processed}개 종목 처리"
+            result = f"한국 종목 자동 분석 완료: 총 {len(analyzed_tickers)}개 종목 성공, {len(failed_tickers)}개 실패"
             logger.info(result)
             
             return {
                 'success': True,
                 'message': result,
-                'processed_count': total_processed
+                'processed_count': len(analyzed_tickers),
+                'failed_count': len(failed_tickers),
+                'total_users': len(user_ticker_mapping),
+                'unique_tickers': len(unique_korean_tickers)
             }
             
     except Exception as e:

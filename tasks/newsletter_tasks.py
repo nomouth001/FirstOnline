@@ -3,13 +3,17 @@ from datetime import datetime, time, timezone, timedelta
 import pytz
 from celery import current_task
 from celery_app import celery_app
-from models import db, User, NewsletterSubscription, Stock, StockList, EmailLog
-from services.newsletter_service import newsletter_service
-from services.email_service import email_service
-# from services.analysis_service import analyze_ticker_internal  # <- 이 줄은 주석 처리 또는 삭제
-from services.progress_service import start_batch_progress, update_progress, end_batch_progress, is_stop_requested
 
 logger = logging.getLogger(__name__)
+
+def get_flask_app():
+    """Flask app 인스턴스 가져오기"""
+    try:
+        from app import app
+        return app
+    except ImportError:
+        logger.error("Flask app을 import할 수 없습니다. app.py가 존재하는지 확인하세요.")
+        return None
 
 @celery_app.task(bind=True)
 def send_daily_newsletters(self):
@@ -17,49 +21,59 @@ def send_daily_newsletters(self):
     try:
         logger.info("일일 뉴스레터 발송 시작")
         
-        # 활성 구독자 중 일일 구독자 찾기
-        subscriptions = NewsletterSubscription.query.filter_by(
-            is_active=True, 
-            frequency='daily'
-        ).all()
+        # Flask app context 생성
+        app = get_flask_app()
+        if not app:
+            return {'success': False, 'message': 'Flask app을 로드할 수 없습니다'}
         
-        success_count = 0
-        error_count = 0
-        
-        for subscription in subscriptions:
-            try:
-                # 사용자 정보 확인
-                if not subscription.user or not subscription.user.is_active:
-                    continue
-                
-                # 발송 시간 확인 (현재 시간이 설정된 발송 시간과 일치하는지)
-                current_time = datetime.now().time()
-                if subscription.send_time and current_time.hour != subscription.send_time.hour:
-                    continue
-                
-                # 뉴스레터 발송
-                success = newsletter_service.send_daily_newsletter(subscription.user_id)
-                
-                if success:
-                    success_count += 1
-                    logger.info(f"일일 뉴스레터 발송 성공: {subscription.user.email}")
-                else:
+        with app.app_context():
+            # 필요한 모듈들을 app context 내에서 import
+            from models import db, User, NewsletterSubscription, Stock, StockList, EmailLog
+            from services.newsletter_service import newsletter_service
+            
+            # 활성 구독자 중 일일 구독자 찾기
+            subscriptions = NewsletterSubscription.query.filter_by(
+                is_active=True, 
+                frequency='daily'
+            ).all()
+            
+            success_count = 0
+            error_count = 0
+            
+            for subscription in subscriptions:
+                try:
+                    # 사용자 정보 확인
+                    if not subscription.user or not subscription.user.is_active:
+                        continue
+                    
+                    # 발송 시간 확인 (현재 시간이 설정된 발송 시간과 일치하는지)
+                    current_time = datetime.now().time()
+                    if subscription.send_time and current_time.hour != subscription.send_time.hour:
+                        continue
+                    
+                    # 뉴스레터 발송
+                    success = newsletter_service.send_daily_newsletter(subscription.user_id)
+                    
+                    if success:
+                        success_count += 1
+                        logger.info(f"일일 뉴스레터 발송 성공: {subscription.user.email}")
+                    else:
+                        error_count += 1
+                        logger.error(f"일일 뉴스레터 발송 실패: {subscription.user.email}")
+                    
+                except Exception as e:
                     error_count += 1
-                    logger.error(f"일일 뉴스레터 발송 실패: {subscription.user.email}")
-                
-            except Exception as e:
-                error_count += 1
-                logger.error(f"사용자 {subscription.user_id} 일일 뉴스레터 발송 오류: {e}")
-        
-        result = f"일일 뉴스레터 발송 완료: 성공 {success_count}건, 실패 {error_count}건"
-        logger.info(result)
-        
-        return {
-            'success': True,
-            'message': result,
-            'success_count': success_count,
-            'error_count': error_count
-        }
+                    logger.error(f"사용자 {subscription.user_id} 일일 뉴스레터 발송 오류: {e}")
+            
+            result = f"일일 뉴스레터 발송 완료: 성공 {success_count}건, 실패 {error_count}건"
+            logger.info(result)
+            
+            return {
+                'success': True,
+                'message': result,
+                'success_count': success_count,
+                'error_count': error_count
+            }
         
     except Exception as e:
         logger.error(f"일일 뉴스레터 발송 태스크 오류: {e}")
@@ -74,11 +88,21 @@ def send_weekly_newsletters(self):
     try:
         logger.info("주간 뉴스레터 발송 시작")
         
-        # 활성 구독자 중 주간 구독자 찾기
-        subscriptions = NewsletterSubscription.query.filter_by(
-            is_active=True, 
-            frequency='weekly'
-        ).all()
+        # Flask app context 생성
+        app = get_flask_app()
+        if not app:
+            return {'success': False, 'message': 'Flask app을 로드할 수 없습니다'}
+        
+        with app.app_context():
+            # 필요한 모듈들을 app context 내에서 import
+            from models import db, User, NewsletterSubscription, Stock, StockList, EmailLog
+            from services.newsletter_service import newsletter_service
+            
+            # 활성 구독자 중 주간 구독자 찾기
+            subscriptions = NewsletterSubscription.query.filter_by(
+                is_active=True, 
+                frequency='weekly'
+            ).all()
         
         success_count = 0
         error_count = 0
@@ -131,11 +155,21 @@ def send_monthly_newsletters(self):
     try:
         logger.info("월간 뉴스레터 발송 시작")
         
-        # 활성 구독자 중 월간 구독자 찾기
-        subscriptions = NewsletterSubscription.query.filter_by(
-            is_active=True, 
-            frequency='monthly'
-        ).all()
+        # Flask app context 생성
+        app = get_flask_app()
+        if not app:
+            return {'success': False, 'message': 'Flask app을 로드할 수 없습니다'}
+        
+        with app.app_context():
+            # 필요한 모듈들을 app context 내에서 import
+            from models import db, User, NewsletterSubscription, Stock, StockList, EmailLog
+            from services.newsletter_service import newsletter_service
+            
+            # 활성 구독자 중 월간 구독자 찾기
+            subscriptions = NewsletterSubscription.query.filter_by(
+                is_active=True, 
+                frequency='monthly'
+            ).all()
         
         success_count = 0
         error_count = 0
@@ -312,8 +346,15 @@ def auto_analyze_us_stocks(self):
     try:
         logger.info("=== 미국 종목 자동 분석 시작 (전역 중복 제거) ===")
         
-        from app import app
+        # Flask app context 생성
+        app = get_flask_app()
+        if not app:
+            return {'success': False, 'message': 'Flask app을 로드할 수 없습니다'}
+        
         with app.app_context():
+            # 필요한 모듈들을 app context 내에서 import
+            from models import db, User, NewsletterSubscription, Stock, StockList, EmailLog
+            from services.progress_service import start_batch_progress, update_progress, end_batch_progress, is_stop_requested
             # 1단계: 모든 활성 사용자의 미국 종목 수집
             active_users = User.query.filter_by(is_active=True).all()
             
@@ -398,8 +439,15 @@ def auto_analyze_korean_stocks(self):
     try:
         logger.info("=== 한국 종목 자동 분석 시작 (전역 중복 제거) ===")
         
-        from app import app
+        # Flask app context 생성
+        app = get_flask_app()
+        if not app:
+            return {'success': False, 'message': 'Flask app을 로드할 수 없습니다'}
+        
         with app.app_context():
+            # 필요한 모듈들을 app context 내에서 import
+            from models import db, User, NewsletterSubscription, Stock, StockList, EmailLog
+            from services.progress_service import start_batch_progress, update_progress, end_batch_progress, is_stop_requested
             # 1단계: 모든 활성 사용자의 한국 종목 수집
             active_users = User.query.filter_by(is_active=True).all()
             
@@ -484,8 +532,16 @@ def send_automated_newsletter(self, market_type='all'):
     try:
         logger.info(f"=== 자동 뉴스레터 발송 시작: {market_type} ===")
         
-        from app import app
+        # Flask app context 생성
+        app = get_flask_app()
+        if not app:
+            return {'success': False, 'message': 'Flask app을 로드할 수 없습니다'}
+        
         with app.app_context():
+            # 필요한 모듈들을 app context 내에서 import
+            from models import db, User, NewsletterSubscription, Stock, StockList, EmailLog
+            from services.newsletter_service import newsletter_service
+            from services.email_service import email_service
             # 활성 구독자 찾기 (자동 뉴스레터 구독자)
             active_users = User.query.filter_by(is_active=True).all()
             

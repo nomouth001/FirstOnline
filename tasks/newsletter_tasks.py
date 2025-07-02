@@ -222,19 +222,28 @@ def send_newsletter_to_user(self, user_id, newsletter_type='daily'):
     try:
         logger.info(f"사용자 {user_id}에게 {newsletter_type} 뉴스레터 발송 시작")
         
-        if newsletter_type == 'daily':
-            success = newsletter_service.send_daily_newsletter(user_id)
-        elif newsletter_type == 'weekly':
-            success = newsletter_service.send_weekly_newsletter(user_id)
-        else:
-            success = newsletter_service.send_daily_newsletter(user_id)
+        # Flask app context 생성
+        app = get_flask_app()
+        if not app:
+            return {'success': False, 'message': 'Flask app을 로드할 수 없습니다'}
         
-        if success:
-            logger.info(f"사용자 {user_id} {newsletter_type} 뉴스레터 발송 성공")
-            return {'success': True, 'message': '발송 성공'}
-        else:
-            logger.error(f"사용자 {user_id} {newsletter_type} 뉴스레터 발송 실패")
-            return {'success': False, 'message': '발송 실패'}
+        with app.app_context():
+            # 필요한 모듈들을 app context 내에서 import
+            from services.newsletter_service import newsletter_service
+            
+            if newsletter_type == 'daily':
+                success = newsletter_service.send_daily_newsletter(user_id)
+            elif newsletter_type == 'weekly':
+                success = newsletter_service.send_weekly_newsletter(user_id)
+            else:
+                success = newsletter_service.send_daily_newsletter(user_id)
+            
+            if success:
+                logger.info(f"사용자 {user_id} {newsletter_type} 뉴스레터 발송 성공")
+                return {'success': True, 'message': '발송 성공'}
+            else:
+                logger.error(f"사용자 {user_id} {newsletter_type} 뉴스레터 발송 실패")
+                return {'success': False, 'message': '발송 실패'}
         
     except Exception as e:
         logger.error(f"사용자 {user_id} {newsletter_type} 뉴스레터 발송 오류: {e}")
@@ -246,36 +255,45 @@ def send_bulk_newsletters(self, user_ids, newsletter_type='daily'):
     try:
         logger.info(f"대량 {newsletter_type} 뉴스레터 발송 시작: {len(user_ids)}명")
         
-        success_count = 0
-        error_count = 0
+        # Flask app context 생성
+        app = get_flask_app()
+        if not app:
+            return {'success': False, 'message': 'Flask app을 로드할 수 없습니다'}
         
-        for user_id in user_ids:
-            try:
-                if newsletter_type == 'daily':
-                    success = newsletter_service.send_daily_newsletter(user_id)
-                elif newsletter_type == 'weekly':
-                    success = newsletter_service.send_weekly_newsletter(user_id)
-                else:
-                    success = newsletter_service.send_daily_newsletter(user_id)
-                
-                if success:
-                    success_count += 1
-                else:
-                    error_count += 1
+        with app.app_context():
+            # 필요한 모듈들을 app context 내에서 import
+            from services.newsletter_service import newsletter_service
+            
+            success_count = 0
+            error_count = 0
+            
+            for user_id in user_ids:
+                try:
+                    if newsletter_type == 'daily':
+                        success = newsletter_service.send_daily_newsletter(user_id)
+                    elif newsletter_type == 'weekly':
+                        success = newsletter_service.send_weekly_newsletter(user_id)
+                    else:
+                        success = newsletter_service.send_daily_newsletter(user_id)
                     
-            except Exception as e:
-                error_count += 1
-                logger.error(f"사용자 {user_id} 뉴스레터 발송 실패: {e}")
-        
-        result = f"대량 발송 완료: 성공 {success_count}건, 실패 {error_count}건"
-        logger.info(result)
-        
-        return {
-            'success': True,
-            'message': result,
-            'success_count': success_count,
-            'error_count': error_count
-        }
+                    if success:
+                        success_count += 1
+                    else:
+                        error_count += 1
+                        
+                except Exception as e:
+                    error_count += 1
+                    logger.error(f"사용자 {user_id} 뉴스레터 발송 실패: {e}")
+            
+            result = f"대량 발송 완료: 성공 {success_count}건, 실패 {error_count}건"
+            logger.info(result)
+            
+            return {
+                'success': True,
+                'message': result,
+                'success_count': success_count,
+                'error_count': error_count
+            }
         
     except Exception as e:
         logger.error(f"대량 뉴스레터 발송 오류: {e}")
@@ -287,58 +305,71 @@ def run_bulk_analysis_for_user(user_id, list_ids):
     특정 사용자의 여러 종목 리스트에 포함된 모든 종목을 일괄 분석합니다.
     (기존 user_stock_routes.py의 bulk_generate 로직을 비동기 태스크로 분리)
     """
-    from app import app, db
-    from services.analysis_service import analyze_ticker_internal  # 함수 내부에서 import
-
-    with app.app_context():
-        user = User.query.get(user_id)
-        if not user:
-            logger.error(f"일괄 분석 태스크 실패: 사용자 ID {user_id}를 찾을 수 없습니다.")
+    try:
+        # Flask app context 생성
+        app = get_flask_app()
+        if not app:
+            logger.error("Flask app을 로드할 수 없습니다.")
             return
-
-        stock_lists = StockList.query.filter(StockList.user_id == user.id, StockList.id.in_(list_ids)).all()
-        if not stock_lists:
-            logger.warning(f"사용자 {user.username}에 대해 분석할 리스트를 찾지 못했습니다: {list_ids}")
-            return
-
-        all_tickers = []
-        for stock_list in stock_lists:
-            tickers_in_list = [stock.ticker for stock in stock_list.stocks]
-            all_tickers.extend(tickers_in_list)
         
-        # 중복 제거
-        unique_tickers = sorted(list(set(all_tickers)))
-        total_tickers = len(unique_tickers)
+        with app.app_context():
+            # 필요한 모듈들을 app context 내에서 import
+            from models import db, User, NewsletterSubscription, Stock, StockList, EmailLog
+            from services.analysis_service import analyze_ticker_internal
+            from services.progress_service import start_batch_progress, update_progress, end_batch_progress, is_stop_requested
+            
+            user = User.query.get(user_id)
+            if not user:
+                logger.error(f"일괄 분석 태스크 실패: 사용자 ID {user_id}를 찾을 수 없습니다.")
+                return
 
-        if total_tickers == 0:
-            logger.info(f"사용자 {user.username}의 선택된 리스트에 분석할 종목이 없습니다.")
-            # 사용자에게 알림을 보내는 로직 추가 가능
-            return
+            stock_lists = StockList.query.filter(StockList.user_id == user.id, StockList.id.in_(list_ids)).all()
+            if not stock_lists:
+                logger.warning(f"사용자 {user.username}에 대해 분석할 리스트를 찾지 못했습니다: {list_ids}")
+                return
 
-        list_names = ", ".join([l.name for l in stock_lists])
-        logger.info(f"사용자 '{user.username}'의 리스트 '{list_names}'에 대한 일괄 분석 시작. 총 {total_tickers}개 종목.")
-        
-        start_batch_progress(user_id, total_tickers, f"Admin bulk job for {user.username}: {list_names}")
+            all_tickers = []
+            for stock_list in stock_lists:
+                tickers_in_list = [stock.ticker for stock in stock_list.stocks]
+                all_tickers.extend(tickers_in_list)
+            
+            # 중복 제거
+            unique_tickers = sorted(list(set(all_tickers)))
+            total_tickers = len(unique_tickers)
 
-        try:
-            for i, ticker in enumerate(unique_tickers, 1):
-                if is_stop_requested(user_id):
-                    logger.info(f"사용자 {user.username}에 의한 작업 중단 요청. {i-1}/{total_tickers} 처리 완료.")
-                    break
+            if total_tickers == 0:
+                logger.info(f"사용자 {user.username}의 선택된 리스트에 분석할 종목이 없습니다.")
+                # 사용자에게 알림을 보내는 로직 추가 가능
+                return
+
+            list_names = ", ".join([l.name for l in stock_lists])
+            logger.info(f"사용자 '{user.username}'의 리스트 '{list_names}'에 대한 일괄 분석 시작. 총 {total_tickers}개 종목.")
+            
+            start_batch_progress(user_id, total_tickers, f"Admin bulk job for {user.username}: {list_names}")
+
+            try:
+                for i, ticker in enumerate(unique_tickers, 1):
+                    if is_stop_requested(user_id):
+                        logger.info(f"사용자 {user.username}에 의한 작업 중단 요청. {i-1}/{total_tickers} 처리 완료.")
+                        break
+                    
+                    logger.info(f"분석 중: {i}/{total_tickers} - {ticker} (for user: {user.username})")
+                    update_progress(user_id, ticker, i, total_tickers, f"Admin bulk job for {user.username}: {list_names}")
+                    
+                    # 내부 분석 함수 호출
+                    analyze_ticker_internal(ticker, user_id=user_id)
+
+                logger.info(f"사용자 {user.username}의 일괄 분석 완료. 총 {i}개 종목 처리.")
+
+            except Exception as e:
+                logger.error(f"사용자 {user.username}의 일괄 분석 중 오류 발생: {e}", exc_info=True)
+            finally:
+                end_batch_progress(user_id)
+                # 완료 후 사용자에게 이메일 알림 등 추가 가능
                 
-                logger.info(f"분석 중: {i}/{total_tickers} - {ticker} (for user: {user.username})")
-                update_progress(user_id, ticker, i, total_tickers, f"Admin bulk job for {user.username}: {list_names}")
-                
-                # 내부 분석 함수 호출
-                analyze_ticker_internal(ticker, user_id=user_id)
-
-            logger.info(f"사용자 {user.username}의 일괄 분석 완료. 총 {i}개 종목 처리.")
-
-        except Exception as e:
-            logger.error(f"사용자 {user.username}의 일괄 분석 중 오류 발생: {e}", exc_info=True)
-        finally:
-            end_batch_progress(user_id)
-            # 완료 후 사용자에게 이메일 알림 등 추가 가능 
+    except Exception as e:
+        logger.error(f"일괄 분석 태스크 오류: {e}")
+        return
 
 @celery_app.task(bind=True)
 def auto_analyze_us_stocks(self):

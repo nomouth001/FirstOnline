@@ -19,7 +19,7 @@ celery_app.conf.update(
     task_serializer='json',
     accept_content=['json'],
     result_serializer='json',
-    timezone='Asia/Seoul',
+    timezone='America/New_York',  # 미국 동부시간으로 변경
     enable_utc=True,
     task_track_started=True,
     task_time_limit=30 * 60,  # 30분
@@ -32,21 +32,21 @@ celery_app.conf.update(
 celery_app.conf.beat_schedule = {
     'send-daily-newsletters': {
         'task': 'tasks.newsletter_tasks.send_daily_newsletters',
-        'schedule': crontab(hour=9, minute=0),  # 매일 오전 9시
+        'schedule': crontab(hour=9, minute=0),  # 매일 EST 9시
     },
     'send-weekly-newsletters': {
         'task': 'tasks.newsletter_tasks.send_weekly_newsletters',
-        'schedule': crontab(day_of_week=1, hour=9, minute=0),  # 매주 월요일 오전 9시
+        'schedule': crontab(day_of_week=1, hour=9, minute=0),  # 매주 월요일 EST 9시
     },
     'send-monthly-newsletters': {
         'task': 'tasks.newsletter_tasks.send_monthly_newsletters',
-        'schedule': crontab(day_of_month=1, hour=9, minute=0),  # 매월 1일 오전 9시
+        'schedule': crontab(day_of_month=1, hour=9, minute=0),  # 매월 1일 EST 9시
     },
     'auto-analyze-us-stocks': {
         'task': 'tasks.newsletter_tasks.auto_analyze_us_stocks',
         'schedule': crontab(
             day_of_week='1-5',  # 월요일~금요일 (1=월, 2=화, 3=수, 4=목, 5=금)
-            hour=8,             # 한국시간 08:00 (= EST 18:00 전날)
+            hour=18,            # EST 18:00 (미국 시장 마감 후)
             minute=0
         ),
     },
@@ -54,7 +54,7 @@ celery_app.conf.beat_schedule = {
         'task': 'tasks.newsletter_tasks.auto_analyze_korean_stocks',
         'schedule': crontab(
             day_of_week='1-5',  # 월요일~금요일
-            hour=18,            # 한국시간 18:00 (= KST 18:00)
+            hour=5,             # EST 05:00 (= KST 18:00/19:00, 서머타임 고려)
             minute=0
         ),
     },

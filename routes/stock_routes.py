@@ -245,24 +245,45 @@ def lookup_ticker():
 @login_required
 def add_ticker():
     """현재 리스트에 종목 추가"""
-    data = request.get_json()
-    ticker = data.get("ticker", "").upper()
-    name = data.get("name", "")
-    current_list_name = session.get('current_stock_list', 'default')
-
-    if not ticker or not name:
-        return "Ticker and name are required", 400
-
+    from flask import Response
+    import json
+    
     try:
+        data = request.get_json()
+        ticker = data.get("ticker", "").upper()
+        name = data.get("name", "")
+        current_list_name = session.get('current_stock_list', 'default')
+
+        if not ticker or not name:
+            error_response = Response(
+                json.dumps({"success": False, "message": "Ticker and name are required"}, ensure_ascii=False),
+                status=400,
+                mimetype='application/json',
+                headers={'Content-Type': 'application/json; charset=utf-8'}
+            )
+            return error_response
+
         # 사용자의 리스트인지 확인
         stock_list = StockList.query.filter_by(user_id=current_user.id, name=current_list_name).first()
         if not stock_list:
-            return f"Stock list '{current_list_name}' not found", 404
+            error_response = Response(
+                json.dumps({"success": False, "message": f"Stock list '{current_list_name}' not found"}, ensure_ascii=False),
+                status=404,
+                mimetype='application/json',
+                headers={'Content-Type': 'application/json; charset=utf-8'}
+            )
+            return error_response
         
         # 종목 개수 제한 확인 (최대 50개)
         current_stock_count = Stock.query.filter_by(stock_list_id=stock_list.id).count()
         if current_stock_count >= 50:
-            return f"리스트당 최대 50개의 종목만 추가할 수 있습니다. 현재: {current_stock_count}개", 400
+            error_response = Response(
+                json.dumps({"success": False, "message": f"리스트당 최대 50개의 종목만 추가할 수 있습니다. 현재: {current_stock_count}개"}, ensure_ascii=False),
+                status=400,
+                mimetype='application/json',
+                headers={'Content-Type': 'application/json; charset=utf-8'}
+            )
+            return error_response
         
         # 중복 확인
         existing_stock = Stock.query.filter_by(
@@ -271,7 +292,13 @@ def add_ticker():
         ).first()
         
         if existing_stock:
-            return f"Ticker {ticker} already exists in {current_list_name}", 409
+            error_response = Response(
+                json.dumps({"success": False, "message": f"Ticker {ticker} already exists in {current_list_name}"}, ensure_ascii=False),
+                status=409,
+                mimetype='application/json',
+                headers={'Content-Type': 'application/json; charset=utf-8'}
+            )
+            return error_response
         
         # 새 종목 추가
         new_stock = Stock(
@@ -282,26 +309,56 @@ def add_ticker():
         db.session.add(new_stock)
         db.session.commit()
         
-        return f"Ticker {ticker} added to {current_list_name} successfully", 200
+        logging.info(f"종목 추가 성공: {ticker} -> {current_list_name} (사용자: {current_user.username})")
+        
+        success_response = Response(
+            json.dumps({"success": True, "message": f"Ticker {ticker} added to {current_list_name} successfully"}, ensure_ascii=False),
+            status=200,
+            mimetype='application/json',
+            headers={'Content-Type': 'application/json; charset=utf-8'}
+        )
+        return success_response
+        
     except Exception as e:
-        logging.exception(f"Failed to add ticker {ticker} to {current_list_name}")
-        return f"Failed to add ticker {ticker} to {current_list_name}: {e}", 500
+        logging.exception(f"Failed to add ticker {ticker} to {current_list_name}: {e}")
+        error_response = Response(
+            json.dumps({"success": False, "message": f"Failed to add ticker: {str(e)}"}, ensure_ascii=False),
+            status=500,
+            mimetype='application/json',
+            headers={'Content-Type': 'application/json; charset=utf-8'}
+        )
+        return error_response
 
 @stock_bp.route("/delete_ticker", methods=["DELETE"])
 @login_required
 def delete_ticker():
     """현재 리스트에서 종목 삭제"""
-    ticker_to_delete = request.args.get("ticker", "").upper()
-    current_list_name = session.get('current_stock_list', 'default')
-
-    if not ticker_to_delete:
-        return "Ticker is required", 400
-
+    from flask import Response
+    import json
+    
     try:
+        ticker_to_delete = request.args.get("ticker", "").upper()
+        current_list_name = session.get('current_stock_list', 'default')
+
+        if not ticker_to_delete:
+            error_response = Response(
+                json.dumps({"success": False, "message": "Ticker is required"}, ensure_ascii=False),
+                status=400,
+                mimetype='application/json',
+                headers={'Content-Type': 'application/json; charset=utf-8'}
+            )
+            return error_response
+
         # 사용자의 리스트인지 확인
         stock_list = StockList.query.filter_by(user_id=current_user.id, name=current_list_name).first()
         if not stock_list:
-            return f"Stock list '{current_list_name}' not found", 404
+            error_response = Response(
+                json.dumps({"success": False, "message": f"Stock list '{current_list_name}' not found"}, ensure_ascii=False),
+                status=404,
+                mimetype='application/json',
+                headers={'Content-Type': 'application/json; charset=utf-8'}
+            )
+            return error_response
         
         # 종목 찾기 및 삭제
         stock = Stock.query.filter_by(
@@ -310,26 +367,50 @@ def delete_ticker():
         ).first()
         
         if not stock:
-            return f"Ticker {ticker_to_delete} not found in {current_list_name}", 404
+            error_response = Response(
+                json.dumps({"success": False, "message": f"Ticker {ticker_to_delete} not found in {current_list_name}"}, ensure_ascii=False),
+                status=404,
+                mimetype='application/json',
+                headers={'Content-Type': 'application/json; charset=utf-8'}
+            )
+            return error_response
 
         db.session.delete(stock)
         db.session.commit()
         
         # 종목 삭제 시 해당 종목의 요약 정보도 업데이트
-        summary_file_path = get_analysis_summary_path(current_list_name)
-        if os.path.exists(summary_file_path):
-            with open(summary_file_path, 'r', encoding='utf-8') as f:
-                summaries = json.load(f)
-            
-            if ticker_to_delete in summaries:
-                del summaries[ticker_to_delete]
-                json_content = json.dumps(summaries, ensure_ascii=False, indent=4)
-                safe_write_file(summary_file_path, json_content)
+        try:
+            summary_file_path = get_analysis_summary_path(current_list_name)
+            if os.path.exists(summary_file_path):
+                with open(summary_file_path, 'r', encoding='utf-8') as f:
+                    summaries = json.load(f)
+                
+                if ticker_to_delete in summaries:
+                    del summaries[ticker_to_delete]
+                    json_content = json.dumps(summaries, ensure_ascii=False, indent=4)
+                    safe_write_file(summary_file_path, json_content)
+        except Exception as summary_error:
+            logging.warning(f"요약 파일 업데이트 실패: {summary_error}")
 
-        return f"Ticker {ticker_to_delete} deleted from {current_list_name} successfully", 200
+        logging.info(f"종목 삭제 성공: {ticker_to_delete} -> {current_list_name} (사용자: {current_user.username})")
+        
+        success_response = Response(
+            json.dumps({"success": True, "message": f"Ticker {ticker_to_delete} deleted from {current_list_name} successfully"}, ensure_ascii=False),
+            status=200,
+            mimetype='application/json',
+            headers={'Content-Type': 'application/json; charset=utf-8'}
+        )
+        return success_response
+        
     except Exception as e:
-        logging.exception(f"Failed to delete ticker {ticker_to_delete} from {current_list_name}")
-        return f"Failed to delete ticker {ticker_to_delete} from {current_list_name}: {e}", 500
+        logging.exception(f"Failed to delete ticker {ticker_to_delete} from {current_list_name}: {e}")
+        error_response = Response(
+            json.dumps({"success": False, "message": f"Failed to delete ticker: {str(e)}"}, ensure_ascii=False),
+            status=500,
+            mimetype='application/json',
+            headers={'Content-Type': 'application/json; charset=utf-8'}
+        )
+        return error_response
 
 @stock_bp.route("/get_analysis_summary", methods=["GET"])
 @login_required

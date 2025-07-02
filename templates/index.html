@@ -452,9 +452,14 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ ticker, name })
         });
-        const message = await res.text();
-        showInlineMessage(message, res.ok ? 'success' : 'error');
-        if (res.ok) {
+        
+        // JSON 응답 처리
+        const data = await res.json();
+        const message = data.message || '알 수 없는 응답';
+        
+        showInlineMessage(message, data.success ? 'success' : 'error');
+        
+        if (data.success) {
             loadTickers();
             document.getElementById("lookup-result").innerHTML = '';
             document.getElementById("ticker").value = '';

@@ -58,7 +58,9 @@ def check_database_connection():
             print(f"  🔧 데이터베이스 엔진: {engine_name}")
             
             # 테이블 확인
-            tables = db.engine.table_names()
+            from sqlalchemy import inspect
+            inspector = inspect(db.engine)
+            tables = inspector.get_table_names()
             print(f"  📋 테이블 수: {len(tables)}")
             
             # 사용자 수 확인

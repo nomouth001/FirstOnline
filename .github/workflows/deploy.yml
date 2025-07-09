@@ -1,0 +1,29 @@
+name: Deploy to AWS Lightsail
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Deploy to Lightsail
+      uses: appleboy/ssh-action@v0.1.5
+      with:
+        host: ${{ secrets.LIGHTSAIL_HOST }}
+        username: ${{ secrets.LIGHTSAIL_USERNAME }}
+        key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+        script: |
+          cd /path/to/your/project
+          git pull origin main
+          source venv/bin/activate
+          pip install -r requirements.txt
+          python init_db.py
+          sudo systemctl restart your-app-name
+          sudo systemctl restart nginx 

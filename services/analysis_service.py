@@ -123,15 +123,15 @@ def analyze_ticker_internal_logic(ticker, analysis_html_path):
     if not found_all_charts:
         for label in ["Daily", "Weekly", "Monthly"]:
             if charts[label] is None:
-            logging.warning(f"[{ticker}] No {label} chart found")
-            # 차트 이미지가 없으면 JSON 반환
-            return {
-                "analysis_gemini": "[차트 이미지 없음]",
-                "analysis_openai": "[차트 이미지 없음]",
-                "summary_gemini": "차트 이미지 없음",
-                "summary_openai": "차트 이미지 없음",
-                "success": False
-            }, 404
+                logging.warning(f"[{ticker}] No {label} chart found")
+        # 차트 이미지가 없으면 JSON 반환
+        return {
+            "analysis_gemini": "[차트 이미지 없음]",
+            "analysis_openai": "[차트 이미지 없음]",
+            "summary_gemini": "차트 이미지 없음",
+            "summary_openai": "차트 이미지 없음",
+            "success": False
+        }, 404
     
     # 차트 파일에서 날짜 정보 추출하여 display_date 업데이트
     try:
@@ -752,9 +752,9 @@ def perform_gemini_analysis(ticker, common_prompt, daily_b64, weekly_b64, monthl
         #     ]
         
         # 차트 이미지 전송 비활성화 - 텍스트만 전달 (OHLCV 데이터와 기술지표 포함)
-            gemini_inputs = [
-                {"text": common_prompt + "\n\n이 분석의 핵심 내용을 세 줄로 요약해 주십시오."}
-            ]
+        gemini_inputs = [
+            {"text": common_prompt + "\n\n이 분석의 핵심 내용을 세 줄로 요약해 주십시오."}
+        ]
         
         logging.debug(f"Gemini API request payload (first part of text): {common_prompt[:200]}...")
         

@@ -203,10 +203,10 @@ def generate_multiple_lists_analysis_route():
     except json.JSONDecodeError as e:
         logging.exception("JSON decode error in generate_multiple_lists_analysis_route")
         return jsonify({"error": f"Invalid JSON data: {str(e)}"}), 400
-    except Exception as e:
+                        except Exception as e:
         logging.exception("Unexpected error in generate_multiple_lists_analysis_route")
         return jsonify({"error": f"Internal server error: {str(e)}"}), 500
-    finally:
+        finally:
         logging.info("=== Ending generate_multiple_lists_analysis_route ===")
 
 @analysis_bp.route("/get_batch_progress/<list_name>")

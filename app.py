@@ -99,6 +99,12 @@ with app.app_context():
         from werkzeug.security import generate_password_hash
         admin_user = User.query.filter_by(username='admin').first()
         if not admin_user:
+            # 환경변수에서 관리자 비밀번호 가져오기
+            admin_password = os.getenv('ADMIN_PASSWORD')
+            if not admin_password:
+                logger.warning("ADMIN_PASSWORD 환경변수가 설정되지 않았습니다! 기본 임시 비밀번호를 사용합니다.")
+                admin_password = 'CHANGE_ME_IMMEDIATELY_123!'
+            
             admin_user = User(
                 username='admin',
                 email='admin@example.com',
@@ -106,11 +112,11 @@ with app.app_context():
                 last_name='User',
                 is_verified=True,
                 is_admin=True,
-                password_hash=generate_password_hash('NewsLetter2025!')
+                password_hash=generate_password_hash(admin_password)
             )
             db.session.add(admin_user)
             db.session.commit()
-            logger.info("기본 관리자 계정 생성 완료")
+            logger.info(f"기본 관리자 계정 생성 완료 (비밀번호: {'환경변수에서 설정' if os.getenv('ADMIN_PASSWORD') else '임시 비밀번호'})")
         else:
             logger.info("기본 관리자 계정이 이미 존재합니다")
     except Exception as e:
@@ -135,6 +141,12 @@ def set_current_stock_list():
             from werkzeug.security import generate_password_hash
             admin_user = User.query.filter_by(username='admin').first()
             if not admin_user:
+                # 환경변수에서 관리자 비밀번호 가져오기
+                admin_password = os.getenv('ADMIN_PASSWORD')
+                if not admin_password:
+                    logger.warning("ADMIN_PASSWORD 환경변수가 설정되지 않았습니다! 기본 임시 비밀번호를 사용합니다.")
+                    admin_password = 'CHANGE_ME_IMMEDIATELY_123!'
+                
                 admin_user = User(
                     username='admin',
                     email='admin@example.com',
@@ -142,11 +154,11 @@ def set_current_stock_list():
                     last_name='User',
                     is_verified=True,
                     is_admin=True,
-                    password_hash=generate_password_hash('NewsLetter2025!')
+                    password_hash=generate_password_hash(admin_password)
                 )
                 db.session.add(admin_user)
                 db.session.commit()
-                logger.info("요청 처리 중 관리자 계정 생성")
+                logger.info(f"요청 처리 중 관리자 계정 생성 (비밀번호: {'환경변수에서 설정' if os.getenv('ADMIN_PASSWORD') else '임시 비밀번호'})")
         except Exception as e:
             logger.error(f"요청 처리 중 데이터베이스 생성 오류: {e}")
     

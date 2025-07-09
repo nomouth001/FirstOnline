@@ -544,7 +544,7 @@ def cleanup_debug_files():
     except Exception as e:
         logger.error(f"Debug 파일 정리 중 오류: {e}")
         flash('Debug 파일 정리 중 오류가 발생했습니다.', 'error')
-        return redirect(url_for('admin.dashboard'))
+        return redirect(url_for('admin.dashboard')) 
 
 @admin_bp.route('/api/file-status/<ticker>')
 @login_required

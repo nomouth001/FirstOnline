@@ -46,15 +46,15 @@ def perform_gemini_analysis(ticker, common_prompt, daily_b64, weekly_b64, monthl
         #         analysis = "[Gemini 분석 실패: 응답이 비어있습니다.]"
         
         # 차트 이미지 전송 비활성화 - 텍스트만으로 분석 (OHLCV 데이터와 기술지표 포함)
-        model_text = genai.GenerativeModel(GEMINI_TEXT_MODEL_VERSION)
-        response = model_text.generate_content(common_prompt)
-        
-        if response.text:
-            analysis = response.text
-            succeeded = True
-            logging.info(f"Gemini text analysis completed successfully for {ticker}")
-        else:
-            analysis = "[Gemini 분석 실패: 응답이 비어있습니다.]"
+            model_text = genai.GenerativeModel(GEMINI_TEXT_MODEL_VERSION)
+            response = model_text.generate_content(common_prompt)
+            
+            if response.text:
+                analysis = response.text
+                succeeded = True
+                logging.info(f"Gemini text analysis completed successfully for {ticker}")
+            else:
+                analysis = "[Gemini 분석 실패: 응답이 비어있습니다.]"
                 
     except ValueError as val_e:
         logging.exception(f"Configuration or data error for Gemini API for {ticker}: {val_e}")

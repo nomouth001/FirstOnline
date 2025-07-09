@@ -65,8 +65,10 @@
 <table id="ticker-table" border="1">
   <thead>
     <tr>
-      <th><button onclick="sortTable(0)">티커 ⇅</button></th>
-      <th><button onclick="sortTable(1)">회사 ⇅</button></th>
+      <th><button onclick="sortTable(0, 'text')">티커 ⇅</button></th>
+      <th><button onclick="sortTable(1, 'text')">회사 ⇅</button></th>
+      <th><button onclick="sortTable(2, 'date')">차트 생성 시간 ⇅</button></th>
+      <th><button onclick="sortTable(3, 'date')">분석 생성 시간 ⇅</button></th>
       <th>삭제</th>
       <th>차트 생성</th>
       <th>AI 분석 보기</th>
@@ -295,15 +297,21 @@
 
         tickers.forEach(row => {
           const ticker = row.ticker.toUpperCase();
+          const isUsStock = !ticker.match(/^\d+$/); // 숫자가 아니면 미국 주식
           const tr = document.createElement('tr');
           tr.innerHTML = `
             <td>${ticker}</td>
             <td>${row.name}</td>
+            <td id="chart-time-${ticker}">생성 안됨</td>
+            <td id="analysis-time-${ticker}">생성 안됨</td>
             <td><button onclick="deleteTicker('${ticker}')">삭제</button></td>
-            <td><button onclick="generateChart('${ticker}')">차트 생성</button></td>
-            <td><button onclick="viewChartAnalysis('${ticker}')">차트 분석 보기</button></td>
+            <td><button id="generate-chart-btn-${ticker}" data-is-us-stock="${isUsStock}" onclick="generateChart('${ticker}')">차트 생성</button></td>
+            <td><button id="view-analysis-btn-${ticker}" data-is-us-stock="${isUsStock}" onclick="viewChartAnalysis('${ticker}')">차트 분석 보기</button></td>
           `;
           tbody.appendChild(tr);
+          
+          // 파일 상태 업데이트
+          updateFileStatus(ticker);
         });
     } catch (error) {
         showInlineMessage(`❌ 관심 종목 로드 중 오류 발생: ${error.message}`, 'error');
@@ -311,16 +319,62 @@
     }
   }
 
-  function sortTable(column) {
+  function sortTable(column, dataType) {
     if (currentSortColumn === column) {
-      // Same column, toggle direction
       currentSortDirection = currentSortDirection === "asc" ? "desc" : "asc";
     } else {
-      // New column, set to ascending
       currentSortColumn = column;
       currentSortDirection = "asc";
     }
-    loadTickers(); // Reload with new sort
+    
+    const table = document.getElementById("ticker-table");
+    const tbody = table.querySelector("tbody");
+    const rows = Array.from(tbody.rows);
+    
+    rows.sort((a, b) => {
+      let aVal = a.cells[column].textContent.trim();
+      let bVal = b.cells[column].textContent.trim();
+      
+      if (dataType === 'date') {
+        // 날짜 정렬
+        if (aVal === '생성 안됨') aVal = '1900-01-01';
+        if (bVal === '생성 안됨') bVal = '1900-01-01';
+        
+        const aDate = new Date(aVal);
+        const bDate = new Date(bVal);
+        
+        if (currentSortDirection === 'asc') {
+          return aDate - bDate;
+        } else {
+          return bDate - aDate;
+        }
+      } else {
+        // 텍스트 정렬
+        if (currentSortDirection === 'asc') {
+          return aVal.localeCompare(bVal);
+        } else {
+          return bVal.localeCompare(aVal);
+        }
+      }
+    });
+    
+    // 정렬된 행들을 다시 테이블에 추가
+    rows.forEach(row => tbody.appendChild(row));
+    
+    // 정렬 표시 업데이트
+    updateSortIndicators(column);
+  }
+  
+  function updateSortIndicators(activeColumn) {
+    const headers = document.querySelectorAll('#ticker-table th button');
+    headers.forEach((header, index) => {
+      if (index === activeColumn) {
+        const symbol = currentSortDirection === 'asc' ? ' ↑' : ' ↓';
+        header.textContent = header.textContent.replace(/ [↑↓⇅]/g, '') + symbol;
+      } else {
+        header.textContent = header.textContent.replace(/ [↑↓⇅]/g, '') + ' ⇅';
+      }
+    });
   }
 
   // Ticker form submission
@@ -395,6 +449,9 @@
       if (res.ok) {
         const result = await res.json();
         showInlineMessage(`✅ ${ticker} 차트 생성 완료!`, 'success');
+        
+        // 파일 상태 업데이트
+        updateFileStatus(ticker);
       } else {
         const errorData = await res.json();
         showInlineMessage(`❌ 차트 생성 실패: ${errorData.error || '알 수 없는 오류'}`, 'error');
@@ -574,6 +631,74 @@
       button.textContent = originalText;
       button.disabled = false;
     }
+  }
+
+  // 파일 상태 업데이트 함수
+  async function updateFileStatus(ticker) {
+    try {
+      const response = await fetch(`/user/api/file-status/${ticker}`);
+      if (response.ok) {
+        const data = await response.json();
+        
+        // 차트 생성 시간 업데이트
+        const chartTimeCell = document.getElementById(`chart-time-${ticker}`);
+        if (chartTimeCell) {
+          chartTimeCell.textContent = data.chart?.formatted_time || '생성 안됨';
+        }
+        
+        // 분석 생성 시간 업데이트
+        const analysisTimeCell = document.getElementById(`analysis-time-${ticker}`);
+        if (analysisTimeCell) {
+          analysisTimeCell.textContent = data.analysis?.formatted_time || '생성 안됨';
+        }
+        
+        // 버튼 상태 업데이트
+        updateButtonStatus(ticker, data.chart?.button_status, data.analysis?.button_status);
+      }
+    } catch (error) {
+      console.error(`파일 상태 업데이트 실패 (${ticker}):`, error);
+    }
+  }
+
+  // 버튼 상태 업데이트 함수
+  function updateButtonStatus(ticker, chartStatus, analysisStatus) {
+    const chartBtn = document.getElementById(`generate-chart-btn-${ticker}`);
+    const analysisBtn = document.getElementById(`view-analysis-btn-${ticker}`);
+    
+    if (chartBtn) {
+      if (chartStatus === 'green') {
+        chartBtn.style.backgroundColor = '#28a745';
+      } else {
+        chartBtn.style.backgroundColor = '';
+      }
+    }
+    
+    if (analysisBtn) {
+      if (analysisStatus === 'green') {
+        analysisBtn.style.backgroundColor = '#28a745';
+      } else {
+        analysisBtn.style.backgroundColor = '';
+      }
+    }
+  }
+
+  // 분석 상태 확인 함수
+  function checkAnalysisStatus(ticker) {
+    const pollInterval = setInterval(async () => {
+      try {
+        const response = await fetch(`/user/api/analysis-status/${ticker}`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.status === 'completed') {
+            clearInterval(pollInterval);
+            updateFileStatus(ticker);
+          }
+        }
+      } catch (error) {
+        console.error(`분석 상태 확인 실패 (${ticker}):`, error);
+        clearInterval(pollInterval);
+      }
+    }, 2000);
   }
 
   // Load stock lists and tickers when page loads

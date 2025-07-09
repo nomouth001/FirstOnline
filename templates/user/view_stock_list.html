@@ -13,11 +13,11 @@
         <p style="color: #666; margin-bottom: 1rem;">{{ stock_list.description }}</p>
     {% endif %}
     
-    <div style="background: #f8f9fa; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
-        <p><strong>종목 수:</strong> {{ stocks|length }}개</p>
-        <p><strong>생성일:</strong> {{ stock_list.created_at.strftime('%Y-%m-%d %H:%M') }}</p>
+    <div style="background: #f8f9fa; padding: 0.5rem 1rem; border-radius: 8px; margin-bottom: 1rem;">
+        <p style="margin: 0.25rem 0;"><strong>종목 수:</strong> {{ stocks|length }}개</p>
+        <p style="margin: 0.25rem 0;"><strong>생성일:</strong> {{ stock_list.created_at.strftime('%Y-%m-%d %H:%M') }}</p>
         {% if stock_list.is_public %}
-            <p><strong>상태:</strong> <span style="background: #28a745; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.8rem;">공개</span></p>
+            <p style="margin: 0.25rem 0;"><strong>상태:</strong> <span style="background: #28a745; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.8rem;">공개</span></p>
         {% endif %}
     </div>
 </div>
@@ -26,12 +26,12 @@
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
         <h3>📈 종목 목록 ({{ stocks|length }}개)</h3>
         <div style="display: flex; gap: 0.5rem;">
-            <a href="{{ url_for('user_stock.add_stock', list_id=stock_list.id) }}" class="btn btn-success">➕ 종목 추가</a>
+            <a href="{{ url_for('user_stock.add_stock', list_id=stock_list.id) }}" class="btn btn-success">종목 추가</a>
             {% if stocks %}
                 <form method="POST" action="{{ url_for('user_stock.bulk_generate', list_id=stock_list.id) }}" style="display: inline;">
                     <button type="submit" class="btn btn-primary" 
                             onclick="return confirm('이 리스트의 모든 종목에 대해 일괄 생성을 시작하시겠습니까?')">
-                        🚀 일괄 생성
+                        일괄 생성
                     </button>
                 </form>
             {% endif %}
@@ -40,20 +40,44 @@
     
     {% if stocks %}
         <div style="overflow-x: auto;">
-            <table style="width: 100%; border-collapse: collapse; margin-top: 1rem;">
+            <table id="stockTable" style="width: 100%; border-collapse: collapse; margin-top: 1rem;">
                 <thead>
                     <tr style="background: #f8f9fa;">
-                        <th style="padding: 0.75rem; text-align: left; border-bottom: 2px solid #dee2e6;">종목 코드</th>
-                        <th style="padding: 0.75rem; text-align: left; border-bottom: 2px solid #dee2e6;">종목명</th>
-                        <th style="padding: 0.75rem; text-align: left; border-bottom: 2px solid #dee2e6;">추가일</th>
+                        <th style="padding: 0.75rem; text-align: left; border-bottom: 2px solid #dee2e6; cursor: pointer; user-select: none;" 
+                            onclick="sortTable(0, 'text')" data-sort="none">
+                            종목 코드 <span class="sort-indicator"></span>
+                        </th>
+                        <th style="padding: 0.75rem; text-align: left; border-bottom: 2px solid #dee2e6; cursor: pointer; user-select: none;" 
+                            onclick="sortTable(1, 'text')" data-sort="none">
+                            종목명 <span class="sort-indicator"></span>
+                        </th>
+                        <th style="padding: 0.75rem; text-align: left; border-bottom: 2px solid #dee2e6; cursor: pointer; user-select: none;" 
+                            onclick="sortTable(2, 'date')" data-sort="none">
+                            추가일 <span class="sort-indicator"></span>
+                        </th>
+                        <th style="padding: 0.75rem; text-align: center; border-bottom: 2px solid #dee2e6; cursor: pointer; user-select: none;" 
+                            onclick="sortTable(3, 'date')" data-sort="none">
+                            차트 생성 시간 <span class="sort-indicator"></span>
+                        </th>
+                        <th style="padding: 0.75rem; text-align: center; border-bottom: 2px solid #dee2e6; cursor: pointer; user-select: none;" 
+                            onclick="sortTable(4, 'date')" data-sort="none">
+                            분석 생성 시간 <span class="sort-indicator"></span>
+                        </th>
                         <th style="padding: 0.75rem; text-align: center; border-bottom: 2px solid #dee2e6;">작업</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {% for stock in stocks %}
+                    {% for stock_data in stocks_with_status %}
+                        {% set stock = stock_data.stock %}
+                        {% set file_status = stock_data.file_status %}
                         <tr style="border-bottom: 1px solid #dee2e6;">
                             <td style="padding: 0.75rem;">
                                 <strong>{{ stock.ticker }}</strong>
+                                {% if file_status.is_us_stock %}
+                                    <span style="background: #007bff; color: white; padding: 2px 4px; border-radius: 3px; font-size: 0.7rem; margin-left: 5px;">US</span>
+                                {% else %}
+                                    <span style="background: #28a745; color: white; padding: 2px 4px; border-radius: 3px; font-size: 0.7rem; margin-left: 5px;">KR</span>
+                                {% endif %}
                             </td>
                             <td style="padding: 0.75rem;">
                                 {{ stock.name or stock.ticker }}
@@ -61,14 +85,32 @@
                             <td style="padding: 0.75rem; color: #666; font-size: 0.9rem;">
                                 {{ stock.created_at.strftime('%Y-%m-%d %H:%M') if stock.created_at else 'N/A' }}
                             </td>
+                            <td style="padding: 0.75rem; text-align: center; font-size: 0.9rem;" id="chart-time-{{ stock.ticker }}">
+                                {% if file_status.chart.exists %}
+                                    <span style="color: #28a745;">{{ file_status.chart.formatted_time }}</span>
+                                {% else %}
+                                    <span style="color: #6c757d;">생성 안됨</span>
+                                {% endif %}
+                            </td>
+                            <td style="padding: 0.75rem; text-align: center; font-size: 0.9rem;" id="analysis-time-{{ stock.ticker }}">
+                                {% if file_status.analysis.exists %}
+                                    <span style="color: #28a745;">{{ file_status.analysis.formatted_time }}</span>
+                                {% else %}
+                                    <span style="color: #6c757d;">생성 안됨</span>
+                                {% endif %}
+                            </td>
                             <td style="padding: 0.75rem; text-align: center;">
                                 <div style="display: flex; gap: 0.5rem; justify-content: center;">
                                     <button onclick="generateChart('{{ stock.ticker }}', event)" 
                                             id="generate-chart-btn-{{ stock.ticker }}"
-                                            class="btn btn-info btn-sm">📊 차트 생성</button>
+                                            class="btn btn-sm {% if file_status.chart.button_status == 'green' %}btn-success{% else %}btn-info{% endif %}"
+                                            data-ticker="{{ stock.ticker }}"
+                                            data-is-us-stock="{{ file_status.is_us_stock|lower }}">차트 생성</button>
                                     <button onclick="viewChartWithConfirmation('{{ stock.ticker }}')" 
-                                            id="view-chart-btn-{{ stock.ticker }}"
-                                            class="btn btn-primary btn-sm">📈 차트 보기</button>
+                                            id="view-analysis-btn-{{ stock.ticker }}"
+                                            class="btn btn-sm {% if file_status.analysis.button_status == 'green' %}btn-success{% else %}btn-primary{% endif %}"
+                                            data-ticker="{{ stock.ticker }}"
+                                            data-is-us-stock="{{ file_status.is_us_stock|lower }}">AI 분석 보기</button>
                                     <form method="POST" action="{{ url_for('user_stock.remove_stock', list_id=stock_list.id, stock_id=stock.id) }}" 
                                           style="display: inline;">
                                         <button type="submit" 
@@ -98,14 +140,14 @@
     <h3>🔧 리스트 관리</h3>
     <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
         <a href="{{ url_for('user_stock.edit_stock_list', list_id=stock_list.id) }}" 
-           class="btn btn-warning">✏️ 리스트 수정</a>
+           class="btn btn-warning">리스트 수정</a>
         
         {% if not stock_list.is_default %}
             <form method="POST" action="{{ url_for('user_stock.delete_stock_list', list_id=stock_list.id) }}" 
                   style="display: inline;">
                 <button type="submit" class="btn btn-danger" 
                         onclick="return confirm('정말 이 리스트를 삭제하시겠습니까? 모든 종목이 함께 삭제됩니다.')">
-                    🗑️ 리스트 삭제
+                    리스트 삭제
                 </button>
             </form>
         {% endif %}
@@ -137,6 +179,26 @@
 
 {% block scripts %}
 {{ super() }}
+<style>
+    .sort-indicator {
+        margin-left: 5px;
+        color: #6c757d;
+    }
+    .sort-indicator:after {
+        content: "↕";
+    }
+    th[data-sort="asc"] .sort-indicator:after {
+        content: "↑";
+        color: #007bff;
+    }
+    th[data-sort="desc"] .sort-indicator:after {
+        content: "↓";
+        color: #007bff;
+    }
+    th:hover {
+        background-color: #e9ecef !important;
+    }
+</style>
 <script>
     // 인라인 메시지 표시 함수 (base.html에 정의되어 있다면 생략 가능)
     function showInlineMessage(message, type) {
@@ -205,6 +267,155 @@
         }, 3000);
     }
 
+    // 테이블 정렬 함수
+    function sortTable(columnIndex, dataType) {
+        const table = document.getElementById('stockTable');
+        const tbody = table.querySelector('tbody');
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+        const header = table.querySelectorAll('th')[columnIndex];
+        
+        // 현재 정렬 상태 확인
+        const currentSort = header.getAttribute('data-sort');
+        let newSort = 'asc';
+        
+        if (currentSort === 'asc') {
+            newSort = 'desc';
+        } else if (currentSort === 'desc') {
+            newSort = 'asc';
+        }
+        
+        // 모든 헤더의 정렬 상태 초기화
+        table.querySelectorAll('th').forEach(th => {
+            th.setAttribute('data-sort', 'none');
+        });
+        
+        // 현재 헤더에 새로운 정렬 상태 설정
+        header.setAttribute('data-sort', newSort);
+        
+        // 행 정렬
+        rows.sort((a, b) => {
+            let aValue = a.cells[columnIndex].textContent.trim();
+            let bValue = b.cells[columnIndex].textContent.trim();
+            
+            if (dataType === 'date') {
+                // 날짜 정렬 - "생성 안됨" 처리
+                if (aValue === '생성 안됨') aValue = '1900-01-01 00:00';
+                if (bValue === '생성 안됨') bValue = '1900-01-01 00:00';
+                
+                // 날짜 문자열을 Date 객체로 변환
+                const aDate = new Date(aValue.replace(/\./g, '-'));
+                const bDate = new Date(bValue.replace(/\./g, '-'));
+                
+                if (newSort === 'asc') {
+                    return aDate - bDate;
+                } else {
+                    return bDate - aDate;
+                }
+            } else {
+                // 텍스트 정렬
+                if (newSort === 'asc') {
+                    return aValue.localeCompare(bValue);
+                } else {
+                    return bValue.localeCompare(aValue);
+                }
+            }
+        });
+        
+        // 정렬된 행들을 테이블에 다시 추가
+        rows.forEach(row => tbody.appendChild(row));
+    }
+
+    // 버튼 색상 및 시간 업데이트 함수
+    function updateButtonStatus(ticker, fileType, timestamp) {
+        console.log(`Updating button status for ${ticker} ${fileType} with timestamp:`, timestamp);
+        
+        const buttonId = fileType === 'chart' ? `generate-chart-btn-${ticker}` : `view-analysis-btn-${ticker}`;
+        const button = document.getElementById(buttonId);
+        const timeCell = document.getElementById(`${fileType}-time-${ticker}`);
+        
+        if (!button || !timeCell) {
+            console.error(`Button or time cell not found for ${ticker} ${fileType}`);
+            return;
+        }
+        
+        const isUsStock = button.dataset.isUsStock === 'true';
+        const now = new Date();
+        const fileTime = new Date(timestamp);
+        
+        // 시간 표시 업데이트
+        const formattedTime = fileTime.toLocaleString('ko-KR', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+        });
+        timeCell.innerHTML = `<span style="color: #28a745;">${formattedTime}</span>`;
+        
+        // 버튼 색상 결정 로직
+        let shouldBeGreen = false;
+        
+        // 시간대 처리
+        let currentTime, fileTimeInTimezone;
+        if (isUsStock) {
+            // 미국 EST 시간대
+            currentTime = new Date(now.toLocaleString("en-US", {timeZone: "America/New_York"}));
+            fileTimeInTimezone = new Date(fileTime.toLocaleString("en-US", {timeZone: "America/New_York"}));
+        } else {
+            // 한국 KST 시간대
+            currentTime = new Date(now.toLocaleString("en-US", {timeZone: "Asia/Seoul"}));
+            fileTimeInTimezone = new Date(fileTime.toLocaleString("en-US", {timeZone: "Asia/Seoul"}));
+        }
+        
+        if (isUsStock) {
+            const currentHour = currentTime.getHours();
+            const currentMinute = currentTime.getMinutes();
+            const fileHour = fileTimeInTimezone.getHours();
+            const fileMinute = fileTimeInTimezone.getMinutes();
+            
+            // 시장 시간: 9:30 AM - 4:00 PM EST
+            const isMarketHours = (currentHour > 9 || (currentHour === 9 && currentMinute >= 30)) && currentHour < 16;
+            const fileInMarketHours = (fileHour > 9 || (fileHour === 9 && fileMinute >= 30)) && fileHour < 16;
+            
+            if (isMarketHours) {
+                // 시장 시간 중: 1시간 이내면 초록색
+                const timeDiff = (currentTime - fileTimeInTimezone) / (1000 * 60 * 60); // 시간 단위
+                shouldBeGreen = timeDiff <= 1;
+            } else {
+                // 시장 시간 외: 파일이 시장 시간 외에 생성되었으면 초록색
+                shouldBeGreen = !fileInMarketHours;
+            }
+        } else {
+            const currentHour = currentTime.getHours();
+            const currentMinute = currentTime.getMinutes();
+            const fileHour = fileTimeInTimezone.getHours();
+            const fileMinute = fileTimeInTimezone.getMinutes();
+            
+            // 시장 시간: 9:00 AM - 3:30 PM KST
+            const isMarketHours = (currentHour >= 9 && currentHour < 15) || (currentHour === 15 && currentMinute <= 30);
+            const fileInMarketHours = (fileHour >= 9 && fileHour < 15) || (fileHour === 15 && fileMinute <= 30);
+            
+            if (isMarketHours) {
+                // 시장 시간 중: 1시간 이내면 초록색
+                const timeDiff = (currentTime - fileTimeInTimezone) / (1000 * 60 * 60); // 시간 단위
+                shouldBeGreen = timeDiff <= 1;
+            } else {
+                // 시장 시간 외: 파일이 시장 시간 외에 생성되었으면 초록색
+                shouldBeGreen = !fileInMarketHours;
+            }
+        }
+        
+        console.log(`Button color decision for ${ticker} ${fileType}: shouldBeGreen=${shouldBeGreen}`);
+        
+        // 버튼 색상 업데이트
+        const oldClass = button.className;
+        button.className = button.className.replace(/btn-(success|info|primary)/, 
+            shouldBeGreen ? 'btn-success' : (fileType === 'chart' ? 'btn-info' : 'btn-primary'));
+        
+        console.log(`Button class changed from "${oldClass}" to "${button.className}"`);
+    }
+
     async function generateChart(ticker, event) {
         const button = event.target;
         const originalText = button.textContent;
@@ -215,18 +426,67 @@
             const res = await fetch(`/generate_chart/${ticker}`);
             if (res.ok) {
                 const result = await res.json();
-                showInlineMessage(`✅ ${ticker} 차트 생성 완료! 이제 '차트 보기'를 클릭하여 확인할 수 있습니다.`, 'success');
+                showInlineMessage(`${ticker} 차트 생성 완료! 이제 'AI 분석 보기'를 클릭하여 확인할 수 있습니다.`, 'success');
+                
+                // 실제 파일 상태를 서버에서 가져와서 업데이트
+                updateFileStatus(ticker);
             } else {
                 const errorData = await res.json();
-                showInlineMessage(`❌ 차트 생성 실패: ${errorData.error || '알 수 없는 오류'}`, 'error');
+                showInlineMessage(`차트 생성 실패: ${errorData.error || '알 수 없는 오류'}`, 'error');
             }
         } catch (error) {
-            showInlineMessage(`❌ 차트 생성 중 오류 발생: ${error.message}`, 'error');
+            showInlineMessage(`차트 생성 중 오류 발생: ${error.message}`, 'error');
             console.error("Generate chart error:", error);
         } finally {
             button.textContent = originalText;
             button.disabled = false;
         }
+    }
+
+    // 서버에서 실제 파일 상태를 가져와서 업데이트하는 함수
+    async function updateFileStatus(ticker) {
+        console.log(`Updating file status for ${ticker}`);
+        try {
+            const response = await fetch(`/user/api/file-status/${ticker}`);
+            const data = await response.json();
+            
+            console.log(`File status response for ${ticker}:`, data);
+            
+            if (data.success) {
+                // 차트 상태 업데이트
+                if (data.chart.exists && data.chart.timestamp) {
+                    updateButtonStatus(ticker, 'chart', data.chart.timestamp);
+                }
+                
+                // 분석 상태 업데이트
+                if (data.analysis.exists && data.analysis.timestamp) {
+                    updateButtonStatus(ticker, 'analysis', data.analysis.timestamp);
+                }
+            } else {
+                console.error(`Failed to get file status for ${ticker}:`, data.error);
+            }
+        } catch (error) {
+            console.error('Error updating file status:', error);
+        }
+    }
+
+    // 분석 생성 상태를 주기적으로 체크하는 함수
+    function checkAnalysisStatus(ticker, intervalId) {
+        fetch(`/user/api/file-status/${ticker}`)
+            .then(response => response.json())
+            .then(data => {
+                console.log(`Analysis status check for ${ticker}:`, data);
+                if (data.success && data.analysis.exists && data.analysis.timestamp) {
+                    // 분석이 완료되었으면 버튼 색상 업데이트
+                    updateButtonStatus(ticker, 'analysis', data.analysis.timestamp);
+                    clearInterval(intervalId);
+                    showInlineMessage(`${ticker} AI 분석 생성 완료!`, 'success');
+                }
+            })
+            .catch(error => {
+                console.error('Error checking analysis status:', error);
+                clearInterval(intervalId);
+            });
     }
 
     function viewChartWithConfirmation(ticker) {
@@ -241,6 +501,16 @@
                     if (userChoice) {
                         // 새로 생성
                         window.open(`/force_new_analysis_with_timestamp/${ticker}`, '_blank');
+                        
+                        // 분석 생성 완료를 주기적으로 체크
+                        const intervalId = setInterval(() => {
+                            checkAnalysisStatus(ticker, intervalId);
+                        }, 2000); // 2초마다 체크
+                        
+                        // 최대 5분 후 체크 중단
+                        setTimeout(() => {
+                            clearInterval(intervalId);
+                        }, 300000);
                     } else {
                         // 기존 파일 사용
                         window.open(`/view_existing_chart/${ticker}`, '_blank');
@@ -248,6 +518,16 @@
                 } else {
                     // 기존 분석이 없으면 바로 새로 생성
                     window.open(`/force_new_analysis_with_timestamp/${ticker}`, '_blank');
+                    
+                    // 분석 생성 완료를 주기적으로 체크
+                    const intervalId = setInterval(() => {
+                        checkAnalysisStatus(ticker, intervalId);
+                    }, 2000); // 2초마다 체크
+                    
+                    // 최대 5분 후 체크 중단
+                    setTimeout(() => {
+                        clearInterval(intervalId);
+                    }, 300000);
                 }
             })
             .catch(error => {
@@ -256,5 +536,25 @@
                 window.open(`/force_new_analysis_with_timestamp/${ticker}`, '_blank');
             });
     }
+
+    // 페이지 로드 시 모든 종목의 파일 상태 확인
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log('Page loaded, checking file status for all stocks...');
+        
+        // 테이블의 모든 종목 행을 찾기
+        const stockRows = document.querySelectorAll('#stockTable tbody tr');
+        
+        stockRows.forEach(row => {
+            // 종목 코드 추출
+            const tickerCell = row.querySelector('td:first-child');
+            if (tickerCell) {
+                const ticker = tickerCell.textContent.trim();
+                console.log(`Found ticker: ${ticker}`);
+                
+                // 각 종목의 파일 상태 확인
+                updateFileStatus(ticker);
+            }
+        });
+    });
 </script>
 {% endblock %} 

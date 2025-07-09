@@ -57,7 +57,35 @@ def view_stock_list(list_id):
     """종목 리스트 상세 보기"""
     stock_list = StockList.query.filter_by(id=list_id, user_id=current_user.id).first_or_404()
     stocks = Stock.query.filter_by(stock_list_id=list_id).all()
-    return render_template('user/view_stock_list.html', stock_list=stock_list, stocks=stocks)
+    
+    # 각 종목의 파일 상태 정보 추가
+    from utils.file_manager import get_stock_file_status
+    stocks_with_status = []
+    for stock in stocks:
+        try:
+            file_status = get_stock_file_status(stock.ticker)
+            stock_data = {
+                'stock': stock,
+                'file_status': file_status
+            }
+            stocks_with_status.append(stock_data)
+        except Exception as e:
+            logger.error(f"Error getting file status for {stock.ticker}: {e}")
+            # 오류 발생 시 기본값으로 설정
+            stock_data = {
+                'stock': stock,
+                'file_status': {
+                    'chart': {'exists': False, 'formatted_time': 'N/A', 'button_status': 'normal'},
+                    'analysis': {'exists': False, 'formatted_time': 'N/A', 'button_status': 'normal'},
+                    'is_us_stock': not stock.ticker.isdigit()
+                }
+            }
+            stocks_with_status.append(stock_data)
+    
+    return render_template('user/view_stock_list.html', 
+                          stock_list=stock_list, 
+                          stocks=stocks,
+                          stocks_with_status=stocks_with_status)
 
 @user_stock_bp.route('/stock-lists/<int:list_id>/edit', methods=['GET', 'POST'])
 @login_required
@@ -360,6 +388,51 @@ def api_get_stocks(list_id):
         'name': s.name,
         'added_at': s.added_at.isoformat()
     } for s in stocks])
+
+@user_stock_bp.route('/api/file-status/<ticker>')
+@login_required
+def api_get_file_status(ticker):
+    """API: 특정 종목의 파일 상태 반환"""
+    try:
+        logger.info(f"Getting file status for ticker: {ticker}")
+        from utils.file_manager import get_stock_file_status
+        file_status = get_stock_file_status(ticker)
+        logger.info(f"File status result: {file_status}")
+        
+        # timestamp를 ISO 형식 문자열로 변환
+        chart_timestamp = file_status['chart']['timestamp']
+        analysis_timestamp = file_status['analysis']['timestamp']
+        
+        response_data = {
+            'success': True,
+            'ticker': ticker,
+            'chart': {
+                'exists': file_status['chart']['exists'],
+                'timestamp': chart_timestamp.isoformat() if chart_timestamp else None,
+                'formatted_time': file_status['chart']['formatted_time'],
+                'button_status': file_status['chart']['button_status']
+            },
+            'analysis': {
+                'exists': file_status['analysis']['exists'],
+                'timestamp': analysis_timestamp.isoformat() if analysis_timestamp else None,
+                'formatted_time': file_status['analysis']['formatted_time'],
+                'button_status': file_status['analysis']['button_status']
+            },
+            'is_us_stock': file_status['is_us_stock']
+        }
+        
+        logger.info(f"API response data: {response_data}")
+        return jsonify(response_data)
+        
+    except Exception as e:
+        logger.error(f"Error getting file status for {ticker}: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'ticker': ticker
+        }), 500
 
 @user_stock_bp.route('/cleanup-duplicate-lists', methods=['POST'])
 @login_required

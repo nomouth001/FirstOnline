@@ -1,5 +1,9 @@
 import os
 from datetime import timedelta
+from dotenv import load_dotenv
+
+# .env 파일 로드
+load_dotenv()
 
 # 기본 설정
 SECRET_KEY = os.getenv('SECRET_KEY', 'your-secret-key-here')
@@ -32,7 +36,7 @@ MEMO_DIR = "static/memos"
 MULTI_SUMMARY_DIR = "static/multi_summaries"
 
 # 날짜별 폴더 구조 설정
-USE_DATE_FOLDERS = True  # 날짜별 폴더 사용 여부
+USE_DATE_FOLDERS = False  # 날짜별 폴더 사용 여부 (False: 한 폴더에 모든 파일 저장)
 DAYS_TO_KEEP = 365  # 보관할 일수 (365일 이전 파일은 자동 삭제)
 
 # API 설정

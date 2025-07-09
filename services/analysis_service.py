@@ -10,8 +10,8 @@ from datetime import datetime, timedelta
 import google.generativeai as genai
 import requests
 from flask import render_template, current_app
-from config import ANALYSIS_DIR, DEBUG_DIR, GOOGLE_API_KEY, CHART_DIR, GEMINI_MODEL_VERSION
-from utils.file_manager import get_date_folder_path
+from config import ANALYSIS_DIR, DEBUG_DIR, GOOGLE_API_KEY, CHART_DIR, GEMINI_MODEL_VERSION, USE_DATE_FOLDERS
+from utils.file_manager import get_date_folder_path, find_latest_chart_files
 from models import _extract_summary_from_analysis
 import json
 import numpy as np
@@ -115,69 +115,62 @@ def analyze_ticker_internal_logic(ticker, analysis_html_path):
 
     # 차트 이미지 경로 설정 (최신 날짜 파일 찾기)
     logging.info(f"[{ticker}] Looking for chart files...")
-    found_all_charts = True
+    charts = find_latest_chart_files(ticker)
+    
+    # 모든 차트 파일이 있는지 확인
+    found_all_charts = all(charts[label] is not None for label in ["Daily", "Weekly", "Monthly"])
+    
+    if not found_all_charts:
+        for label in ["Daily", "Weekly", "Monthly"]:
+            if charts[label] is None:
+                logging.warning(f"[{ticker}] No {label} chart found")
+        # 차트 이미지가 없으면 JSON 반환
+        return {
+            "analysis_gemini": "[차트 이미지 없음]",
+            "analysis_openai": "[차트 이미지 없음]",
+            "summary_gemini": "차트 이미지 없음",
+            "summary_openai": "차트 이미지 없음",
+            "success": False
+        }, 404
+    
+    # 차트 파일에서 날짜 정보 추출하여 display_date 업데이트
+    try:
+        # Daily 차트 파일명에서 날짜 추출
+        if charts["Daily"]:
+            daily_filename = os.path.basename(charts["Daily"])
+            parts = daily_filename.split('_')
+            if len(parts) >= 3:
+                file_date_str = parts[2].split('.')[0]
+                file_date = datetime.strptime(file_date_str, "%Y%m%d")
+                display_date = file_date.strftime("%Y-%m-%d")
+    except Exception as e:
+        logging.warning(f"[{ticker}] Could not extract date from chart filename: {e}")
+    
     for label in ["Daily", "Weekly", "Monthly"]:
-        # 날짜별 폴더 구조를 고려하여 모든 날짜 폴더에서 차트 파일 검색
-        chart_files = []
-        if os.path.exists(CHART_DIR):
-            for date_folder in os.listdir(CHART_DIR):
-                date_folder_path = os.path.join(CHART_DIR, date_folder)
-                if os.path.isdir(date_folder_path) and date_folder.isdigit() and len(date_folder) == 8:
-                    # 해당 날짜 폴더에서 차트 파일 검색
-                    folder_chart_files = [f for f in os.listdir(date_folder_path) 
-                                        if f.startswith(f"{ticker}_{label.lower()}_") and f.endswith(".png")]
-                    for cf in folder_chart_files:
-                        chart_files.append((date_folder, cf))
-        
-        latest_file = None
-        latest_date_in_files = None
-
-        for date_folder, cf in chart_files:
-            try:
-                parts = cf.split('_')
-                if len(parts) >= 3:
-                    file_date_str = parts[2].split('.')[0]
-                    file_date = datetime.strptime(file_date_str, "%Y%m%d")
-                    if latest_date_in_files is None or file_date > latest_date_in_files:
-                        latest_date_in_files = file_date
-                        latest_file = (date_folder, cf)
-            except ValueError:
-                continue
-
-        if latest_file:
-            date_folder, cf = latest_file
-            charts[label] = os.path.join(CHART_DIR, date_folder, cf)
-            # 현재 차트 파일의 날짜를 기준으로 display_date를 업데이트
-            if latest_date_in_files:
-                 display_date = latest_date_in_files.strftime("%Y-%m-%d")
-            logging.info(f"[{ticker}] Found {label} chart: {cf}")
-        else:
-            found_all_charts = False
-            logging.warning(f"[{ticker}] No {label} chart found")
-            # 차트 이미지가 없으면 JSON 반환
-            return {
-                "analysis_gemini": "[차트 이미지 없음]",
-                "analysis_openai": "[차트 이미지 없음]",
-                "summary_gemini": "차트 이미지 없음",
-                "summary_openai": "차트 이미지 없음",
-                "success": False
-            }, 404
+        if charts[label]:
+            logging.info(f"[{ticker}] Found {label} chart: {os.path.basename(charts[label])}")
 
     logging.info(f"[{ticker}] Chart files found: Daily={charts['Daily'] is not None}, Weekly={charts['Weekly'] is not None}, Monthly={charts['Monthly'] is not None}")
 
-    # 이미지 인코딩 함수
-    def encode_image(path):
-        # path가 None일 경우 빈 문자열 반환
-        if path is None:
-            return ""
-        with open(path, "rb") as f:
-            return base64.b64encode(f.read()).decode("utf-8")
+    # 이미지 인코딩 함수 (주석처리: 차트 이미지 전송 비활성화)
+    # def encode_image(path):
+    #     # path가 None일 경우 빈 문자열 반환
+    #     if path is None:
+    #         return ""
+    #     with open(path, "rb") as f:
+    #         return base64.b64encode(f.read()).decode("utf-8")
 
-    logging.info(f"[{ticker}] Encoding chart images...")
-    daily_b64 = encode_image(charts["Daily"])
-    weekly_b64 = encode_image(charts["Weekly"])
-    monthly_b64 = encode_image(charts["Monthly"])
-    logging.info(f"[{ticker}] Chart images encoded successfully")
+    # logging.info(f"[{ticker}] Encoding chart images...")
+    # daily_b64 = encode_image(charts["Daily"])
+    # weekly_b64 = encode_image(charts["Weekly"])
+    # monthly_b64 = encode_image(charts["Monthly"])
+    # logging.info(f"[{ticker}] Chart images encoded successfully")
+    
+    # 차트 이미지 전송 비활성화 - 빈 문자열로 설정
+    logging.info(f"[{ticker}] Chart image transmission disabled - using text-only analysis")
+    daily_b64 = ""
+    weekly_b64 = ""
+    monthly_b64 = ""
 
     # 공통 프롬프트 생성 (AI 분석 재시도 시에도 동일하게 사용)
     try:
@@ -299,6 +292,7 @@ def analyze_ticker_internal_logic(ticker, analysis_html_path):
         if daily_df.empty or len(daily_df) < 40:
              raise ValueError(f"Insufficient daily data ({len(daily_df)} points) for indicators up to {data_end_date.strftime('%Y-%m-%d')}.")
 
+        # 기술지표 계산 (차트 생성 및 기타 용도로 유지, AI 프롬프트 전송은 비활성화)
         daily_df['EMA5'] = ta.trend.ema_indicator(daily_df['Close'], window=5)
         daily_df['EMA20'] = ta.trend.ema_indicator(daily_df['Close'], window=20)
         daily_df['EMA40'] = ta.trend.ema_indicator(daily_df['Close'], window=40)
@@ -518,59 +512,9 @@ def analyze_ticker_internal_logic(ticker, analysis_html_path):
         weekly_ohlcv_data = format_ohlcv_data(weekly_ohlcv_data_points, "주봉")
         monthly_ohlcv_data = format_ohlcv_data(monthly_ohlcv_data_points, "월봉")
 
-        # 프롬프트 템플릿에 실제 데이터 삽입
+        # 프롬프트 템플릿에 OHLCV 데이터만 삽입 (기술지표는 AI가 계산)
         common_prompt = prompt_template.format(
             ticker=ticker,
-            display_date=display_date,
-            current_close=current_close,
-            volume_daily=volume_daily,
-            volume_weekly=volume_weekly,
-            volume_monthly=volume_monthly,
-            ema_daily_5=ema_daily_5,
-            ema_daily_20=ema_daily_20,
-            ema_daily_40=ema_daily_40,
-            macd_line_daily=macd_line_daily,
-            macd_signal_daily=macd_signal_daily,
-            macd_hist_daily=macd_hist_daily,
-            bb_upper_daily=bb_upper_daily,
-            bb_lower_daily=bb_lower_daily,
-            bb_ma_daily=bb_ma_daily,
-            ichimoku_conv_daily=ichimoku_conv_daily,
-            ichimoku_base_daily=ichimoku_base_daily,
-            ichimoku_spana_daily=ichimoku_spana_daily,
-            ichimoku_spanb_daily=ichimoku_spanb_daily,
-            ichimoku_lag_daily=ichimoku_lag_daily,
-            ema_weekly_5=ema_weekly_5,
-            ema_weekly_20=ema_weekly_20,
-            ema_weekly_40=ema_weekly_40,
-            macd_line_weekly=macd_line_weekly,
-            macd_signal_weekly=macd_signal_weekly,
-            macd_hist_weekly=macd_hist_weekly,
-            bb_upper_weekly=bb_upper_weekly,
-            bb_lower_weekly=bb_lower_weekly,
-            bb_ma_weekly=bb_ma_weekly,
-            ichimoku_conv_weekly=ichimoku_conv_weekly,
-            ichimoku_base_weekly=ichimoku_base_weekly,
-            ichimoku_spana_weekly=ichimoku_spana_weekly,
-            ichimoku_spanb_weekly=ichimoku_spanb_weekly,
-            ichimoku_lag_weekly=ichimoku_lag_weekly,
-            ema_monthly_5=ema_monthly_5,
-            ema_monthly_20=ema_monthly_20,
-            ema_monthly_40=ema_monthly_40,
-            macd_line_monthly=macd_line_monthly,
-            macd_signal_monthly=macd_signal_monthly,
-            macd_hist_monthly=macd_hist_monthly,
-            bb_upper_monthly=bb_upper_monthly,
-            bb_lower_monthly=bb_lower_monthly,
-            bb_ma_monthly=bb_ma_monthly,
-            ichimoku_conv_monthly=ichimoku_conv_monthly,
-            ichimoku_base_monthly=ichimoku_base_monthly,
-            ichimoku_spana_monthly=ichimoku_spana_monthly,
-            ichimoku_spanb_monthly=ichimoku_spanb_monthly,
-            ichimoku_lag_monthly=ichimoku_lag_monthly,
-            daily_time_series=daily_time_series,
-            weekly_time_series=weekly_time_series,
-            monthly_time_series=monthly_time_series,
             daily_ohlcv_data=daily_ohlcv_data,
             weekly_ohlcv_data=weekly_ohlcv_data,
             monthly_ohlcv_data=monthly_ohlcv_data
@@ -592,10 +536,10 @@ def analyze_ticker_internal_logic(ticker, analysis_html_path):
         ema_debug_lines.append("\n[Monthly EMA for Chart]")
         for idx in monthly_df.index:
             ema_debug_lines.append(f"{idx.strftime('%Y-%m-%d')}, EMA5: {monthly_df.loc[idx, 'EMA5']:.2f}, EMA20: {monthly_df.loc[idx, 'EMA20']:.2f}, EMA40: {monthly_df.loc[idx, 'EMA40']:.2f}")
-        ema_debug_lines.append("\n[EMA values sent to AI (actual .2f formatted values)]")
-        ema_debug_lines.append(f"AI receives - Daily: EMA5: {ema_daily_5:.2f}, EMA20: {ema_daily_20:.2f}, EMA40: {ema_daily_40:.2f}")
-        ema_debug_lines.append(f"AI receives - Weekly: EMA5: {ema_weekly_5:.2f}, EMA20: {ema_weekly_20:.2f}, EMA40: {ema_weekly_40:.2f}")
-        ema_debug_lines.append(f"AI receives - Monthly: EMA5: {ema_monthly_5:.2f}, EMA20: {ema_monthly_20:.2f}, EMA40: {ema_monthly_40:.2f}")
+        ema_debug_lines.append("\n[EMA values calculated (NOT sent to AI - only OHLCV data sent)]")
+        ema_debug_lines.append(f"Calculated - Daily: EMA5: {ema_daily_5:.2f}, EMA20: {ema_daily_20:.2f}, EMA40: {ema_daily_40:.2f}")
+        ema_debug_lines.append(f"Calculated - Weekly: EMA5: {ema_weekly_5:.2f}, EMA20: {ema_weekly_20:.2f}, EMA40: {ema_weekly_40:.2f}")
+        ema_debug_lines.append(f"Calculated - Monthly: EMA5: {ema_monthly_5:.2f}, EMA20: {ema_monthly_20:.2f}, EMA40: {ema_monthly_40:.2f}")
         debug_folder = get_date_folder_path(DEBUG_DIR, current_date_str)
         ema_debug_path = os.path.join(debug_folder, f"{ticker}_ema_debug_{current_date_str}.txt")
         with open(ema_debug_path, 'w', encoding='utf-8') as f:
@@ -613,10 +557,10 @@ def analyze_ticker_internal_logic(ticker, analysis_html_path):
         macd_debug_lines.append("\n[Monthly MACD for Chart]")
         for idx in monthly_df.index:
             macd_debug_lines.append(f"{idx.strftime('%Y-%m-%d')}, MACD: {monthly_df.loc[idx, 'MACD_TA']:.2f}, Signal: {monthly_df.loc[idx, 'MACD_Signal_TA']:.2f}, Hist: {monthly_df.loc[idx, 'MACD_Hist_TA']:.2f}")
-        macd_debug_lines.append("\n[MACD values sent to AI (actual .2f formatted values)]")
-        macd_debug_lines.append(f"AI receives - Daily: MACD: {macd_line_daily:.2f}, Signal: {macd_signal_daily:.2f}, Hist: {macd_hist_daily:.2f}")
-        macd_debug_lines.append(f"AI receives - Weekly: MACD: {macd_line_weekly:.2f}, Signal: {macd_signal_weekly:.2f}, Hist: {macd_hist_weekly:.2f}")
-        macd_debug_lines.append(f"AI receives - Monthly: MACD: {macd_line_monthly:.2f}, Signal: {macd_signal_monthly:.2f}, Hist: {macd_hist_monthly:.2f}")
+        macd_debug_lines.append("\n[MACD values calculated (NOT sent to AI - only OHLCV data sent)]")
+        macd_debug_lines.append(f"Calculated - Daily: MACD: {macd_line_daily:.2f}, Signal: {macd_signal_daily:.2f}, Hist: {macd_hist_daily:.2f}")
+        macd_debug_lines.append(f"Calculated - Weekly: MACD: {macd_line_weekly:.2f}, Signal: {macd_signal_weekly:.2f}, Hist: {macd_hist_weekly:.2f}")
+        macd_debug_lines.append(f"Calculated - Monthly: MACD: {macd_line_monthly:.2f}, Signal: {macd_signal_monthly:.2f}, Hist: {macd_hist_monthly:.2f}")
         macd_debug_path = os.path.join(debug_folder, f"{ticker}_macd_debug_{current_date_str}.txt")
         with open(macd_debug_path, 'w', encoding='utf-8') as f:
             f.write('\n'.join(macd_debug_lines))
@@ -633,10 +577,10 @@ def analyze_ticker_internal_logic(ticker, analysis_html_path):
         bb_debug_lines.append("\n[Monthly Bollinger Bands for Chart]")
         for idx in monthly_df.index:
             bb_debug_lines.append(f"{idx.strftime('%Y-%m-%d')}, BB_Upper: {monthly_df.loc[idx, 'BB_Upper']:.2f}, BB_Lower: {monthly_df.loc[idx, 'BB_Lower']:.2f}, BB_MA: {monthly_df.loc[idx, 'BB_MA']:.2f}")
-        bb_debug_lines.append("\n[Bollinger Bands values sent to AI (actual .2f formatted values)]")
-        bb_debug_lines.append(f"AI receives - Daily: BB_Upper: {bb_upper_daily:.2f}, BB_Lower: {bb_lower_daily:.2f}, BB_MA: {bb_ma_daily:.2f}")
-        bb_debug_lines.append(f"AI receives - Weekly: BB_Upper: {bb_upper_weekly:.2f}, BB_Lower: {bb_lower_weekly:.2f}, BB_MA: {bb_ma_weekly:.2f}")
-        bb_debug_lines.append(f"AI receives - Monthly: BB_Upper: {bb_upper_monthly:.2f}, BB_Lower: {bb_lower_monthly:.2f}, BB_MA: {bb_ma_monthly:.2f}")
+        bb_debug_lines.append("\n[Bollinger Bands values calculated (NOT sent to AI - only OHLCV data sent)]")
+        bb_debug_lines.append(f"Calculated - Daily: BB_Upper: {bb_upper_daily:.2f}, BB_Lower: {bb_lower_daily:.2f}, BB_MA: {bb_ma_daily:.2f}")
+        bb_debug_lines.append(f"Calculated - Weekly: BB_Upper: {bb_upper_weekly:.2f}, BB_Lower: {bb_lower_weekly:.2f}, BB_MA: {bb_ma_weekly:.2f}")
+        bb_debug_lines.append(f"Calculated - Monthly: BB_Upper: {bb_upper_monthly:.2f}, BB_Lower: {bb_lower_monthly:.2f}, BB_MA: {bb_ma_monthly:.2f}")
         bb_debug_path = os.path.join(debug_folder, f"{ticker}_bollinger_bands_debug_{current_date_str}.txt")
         with open(bb_debug_path, 'w', encoding='utf-8') as f:
             f.write('\n'.join(bb_debug_lines))
@@ -653,10 +597,10 @@ def analyze_ticker_internal_logic(ticker, analysis_html_path):
         ichimoku_debug_lines.append("\n[Monthly Ichimoku for Chart]")
         for idx in monthly_df.index:
             ichimoku_debug_lines.append(f"{idx.strftime('%Y-%m-%d')}, Ichimoku_Conversion: {monthly_df.loc[idx, 'Ichimoku_Conversion']:.2f}, Ichimoku_Base: {monthly_df.loc[idx, 'Ichimoku_Base']:.2f}, Ichimoku_SpanA: {monthly_df.loc[idx, 'Ichimoku_SpanA']:.2f}, Ichimoku_SpanB: {monthly_df.loc[idx, 'Ichimoku_SpanB']:.2f}, Ichimoku_Lagging: {monthly_df.loc[idx, 'Ichimoku_Lagging']:.2f}")
-        ichimoku_debug_lines.append("\n[Ichimoku values sent to AI (actual .2f formatted values)]")
-        ichimoku_debug_lines.append(f"AI receives - Daily: Conv: {ichimoku_conv_daily:.2f}, Base: {ichimoku_base_daily:.2f}, SpanA: {ichimoku_spana_daily:.2f}, SpanB: {ichimoku_spanb_daily:.2f}, Lag: {ichimoku_lag_daily:.2f}")
-        ichimoku_debug_lines.append(f"AI receives - Weekly: Conv: {ichimoku_conv_weekly:.2f}, Base: {ichimoku_base_weekly:.2f}, SpanA: {ichimoku_spana_weekly:.2f}, SpanB: {ichimoku_spanb_weekly:.2f}, Lag: {ichimoku_lag_weekly:.2f}")
-        ichimoku_debug_lines.append(f"AI receives - Monthly: Conv: {ichimoku_conv_monthly:.2f}, Base: {ichimoku_base_monthly:.2f}, SpanA: {ichimoku_spana_monthly:.2f}, SpanB: {ichimoku_spanb_monthly:.2f}, Lag: {ichimoku_lag_monthly:.2f}")
+        ichimoku_debug_lines.append("\n[Ichimoku values calculated (NOT sent to AI - only OHLCV data sent)]")
+        ichimoku_debug_lines.append(f"Calculated - Daily: Conv: {ichimoku_conv_daily:.2f}, Base: {ichimoku_base_daily:.2f}, SpanA: {ichimoku_spana_daily:.2f}, SpanB: {ichimoku_spanb_daily:.2f}, Lag: {ichimoku_lag_daily:.2f}")
+        ichimoku_debug_lines.append(f"Calculated - Weekly: Conv: {ichimoku_conv_weekly:.2f}, Base: {ichimoku_base_weekly:.2f}, SpanA: {ichimoku_spana_weekly:.2f}, SpanB: {ichimoku_spanb_weekly:.2f}, Lag: {ichimoku_lag_weekly:.2f}")
+        ichimoku_debug_lines.append(f"Calculated - Monthly: Conv: {ichimoku_conv_monthly:.2f}, Base: {ichimoku_base_monthly:.2f}, SpanA: {ichimoku_spana_monthly:.2f}, SpanB: {ichimoku_spanb_monthly:.2f}, Lag: {ichimoku_lag_monthly:.2f}")
         ichimoku_debug_path = os.path.join(debug_folder, f"{ticker}_ichimoku_debug_{current_date_str}.txt")
         with open(ichimoku_debug_path, 'w', encoding='utf-8') as f:
             f.write('\n'.join(ichimoku_debug_lines))
@@ -673,10 +617,10 @@ def analyze_ticker_internal_logic(ticker, analysis_html_path):
         volume_debug_lines.append("\n[Monthly Volume for Chart]")
         for idx in monthly_df.index:
             volume_debug_lines.append(f"{idx.strftime('%Y-%m-%d')}, Volume: {monthly_df.loc[idx, 'Volume']:,.0f}")
-        volume_debug_lines.append("\n[Volume values sent to AI (actual formatted values)]")
-        volume_debug_lines.append(f"AI receives - Daily: Volume: {volume_daily:,.0f}")
-        volume_debug_lines.append(f"AI receives - Weekly: Volume: {volume_weekly:,.0f}")
-        volume_debug_lines.append(f"AI receives - Monthly: Volume: {volume_monthly:,.0f}")
+        volume_debug_lines.append("\n[Volume values included in OHLCV data sent to AI]")
+        volume_debug_lines.append(f"OHLCV includes - Daily: Volume: {volume_daily:,.0f}")
+        volume_debug_lines.append(f"OHLCV includes - Weekly: Volume: {volume_weekly:,.0f}")
+        volume_debug_lines.append(f"OHLCV includes - Monthly: Volume: {volume_monthly:,.0f}")
         volume_debug_path = os.path.join(debug_folder, f"{ticker}_volume_debug_{current_date_str}.txt")
         with open(volume_debug_path, 'w', encoding='utf-8') as f:
             f.write('\n'.join(volume_debug_lines))
@@ -792,20 +736,25 @@ def perform_gemini_analysis(ticker, common_prompt, daily_b64, weekly_b64, monthl
         
         model = genai.GenerativeModel(GEMINI_MODEL_VERSION)
         
-        # 이미지가 있는 경우와 없는 경우를 구분
-        if daily_b64 and weekly_b64 and monthly_b64:
-            # 기존 방식: 이미지와 텍스트 함께 전달
-            gemini_inputs = [
-                {"text": common_prompt + "\n\n이 분석의 핵심 내용을 세 줄로 요약해 주십시오."},
-                {"inline_data": {"mime_type": "image/png", "data": daily_b64}},
-                {"inline_data": {"mime_type": "image/png", "data": weekly_b64}},
-                {"inline_data": {"mime_type": "image/png", "data": monthly_b64}}
-            ]
-        else:
-            # 새로운 방식: 텍스트만 전달 (히스토리컬 데이터 포함)
-            gemini_inputs = [
-                {"text": common_prompt + "\n\n이 분석의 핵심 내용을 세 줄로 요약해 주십시오."}
-            ]
+        # 이미지가 있는 경우와 없는 경우를 구분 (주석처리: 차트 이미지 전송 비활성화)
+        # if daily_b64 and weekly_b64 and monthly_b64:
+        #     # 기존 방식: 이미지와 텍스트 함께 전달
+        #     gemini_inputs = [
+        #         {"text": common_prompt + "\n\n이 분석의 핵심 내용을 세 줄로 요약해 주십시오."},
+        #         {"inline_data": {"mime_type": "image/png", "data": daily_b64}},
+        #         {"inline_data": {"mime_type": "image/png", "data": weekly_b64}},
+        #         {"inline_data": {"mime_type": "image/png", "data": monthly_b64}}
+        #     ]
+        # else:
+        #     # 새로운 방식: 텍스트만 전달 (히스토리컬 데이터 포함)
+        #     gemini_inputs = [
+        #         {"text": common_prompt + "\n\n이 분석의 핵심 내용을 세 줄로 요약해 주십시오."}
+        #     ]
+        
+        # 차트 이미지 전송 비활성화 - 텍스트만 전달 (OHLCV 데이터와 기술지표 포함)
+        gemini_inputs = [
+            {"text": common_prompt + "\n\n이 분석의 핵심 내용을 세 줄로 요약해 주십시오."}
+        ]
         
         logging.debug(f"Gemini API request payload (first part of text): {common_prompt[:200]}...")
         

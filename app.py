@@ -5,7 +5,8 @@ import os
 from flask import Flask, render_template, session, flash, redirect, url_for
 from flask_login import LoginManager, current_user, login_required
 from config import SECRET_KEY, SESSION_TYPE, PERMANENT_SESSION_LIFETIME, LOGGING_ENABLED, SQLALCHEMY_DATABASE_URI, SQLALCHEMY_TRACK_MODIFICATIONS
-from models import db, User
+from models import db, User, StockList, Stock
+from utils.file_manager import get_stock_file_status
 
 # 로깅 설정을 가장 먼저 적용
 try:
@@ -151,7 +152,6 @@ def set_current_stock_list():
     
     if current_user.is_authenticated and 'current_stock_list' not in session:
         # 사용자의 기본 리스트로 설정
-        from models import StockList
         try:
             default_list = StockList.query.filter_by(user_id=current_user.id, is_default=True).first()
             if default_list:

@@ -544,4 +544,65 @@ def cleanup_debug_files():
     except Exception as e:
         logger.error(f"Debug 파일 정리 중 오류: {e}")
         flash('Debug 파일 정리 중 오류가 발생했습니다.', 'error')
-        return redirect(url_for('admin.dashboard')) 
+        return redirect(url_for('admin.dashboard'))
+
+@admin_bp.route('/api/file-status/<ticker>')
+@login_required
+@admin_required
+def api_get_file_status(ticker):
+    """API: 특정 종목의 파일 상태 반환 (어드민용)"""
+    try:
+        logger.info(f"Getting file status for ticker: {ticker}")
+        from utils.file_manager import get_stock_file_status
+        file_status = get_stock_file_status(ticker)
+        logger.info(f"File status result: {file_status}")
+        
+        # 간단한 응답 형식으로 변환
+        response_data = {
+            'success': True,
+            'ticker': ticker,
+            'chart_time': file_status['chart']['formatted_time'],
+            'analysis_time': file_status['analysis']['formatted_time'],
+            'chart_button_status': file_status['chart']['button_status'],
+            'analysis_button_status': file_status['analysis']['button_status']
+        }
+        
+        logger.info(f"API response data: {response_data}")
+        return jsonify(response_data)
+        
+    except Exception as e:
+        logger.error(f"Error getting file status for {ticker}: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'ticker': ticker,
+            'chart_time': '생성 안됨',
+            'analysis_time': '생성 안됨',
+            'chart_button_status': 'normal',
+            'analysis_button_status': 'normal'
+        }), 500
+
+@admin_bp.route('/api/analysis-status/<ticker>')
+@login_required
+@admin_required
+def api_get_analysis_status(ticker):
+    """API: 특정 종목의 분석 상태 확인 (어드민용)"""
+    try:
+        # 분석 상태 확인 로직 (실제 구현에 따라 수정 필요)
+        # 여기서는 간단히 완료 상태로 반환
+        return jsonify({
+            'success': True,
+            'ticker': ticker,
+            'status': 'completed'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting analysis status for {ticker}: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'ticker': ticker,
+            'status': 'error'
+        }), 500 

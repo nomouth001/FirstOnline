@@ -162,14 +162,37 @@ def analyze_ticker_internal_logic(ticker, analysis_html_path):
         for label in ["Daily", "Weekly", "Monthly"]:
             if charts[label] is None:
                 logging.warning(f"[{ticker}] No {label} chart found")
-        # 차트 이미지가 없으면 JSON 반환
-        return {
-            "analysis_gemini": "[차트 이미지 없음]",
-            "analysis_openai": "[차트 이미지 없음]",
-            "summary_gemini": "차트 이미지 없음",
-            "summary_openai": "차트 이미지 없음",
-            "success": False
-        }, 404
+        
+        # 차트 파일이 없으면 먼저 차트를 생성
+        logging.info(f"[{ticker}] Chart files not found, generating charts first...")
+        try:
+            from services.chart_service import generate_chart
+            chart_paths = generate_chart(ticker)
+            logging.info(f"[{ticker}] Chart generation completed: {chart_paths}")
+            
+            # 차트 생성 후 다시 파일 검색
+            charts = find_latest_chart_files(ticker)
+            found_all_charts = all(charts[label] is not None for label in ["Daily", "Weekly", "Monthly"])
+            
+            if not found_all_charts:
+                logging.error(f"[{ticker}] Chart generation failed, still missing chart files")
+                return {
+                    "analysis_gemini": "[차트 생성 실패]",
+                    "analysis_openai": "[차트 생성 실패]",
+                    "summary_gemini": "차트 생성 실패",
+                    "summary_openai": "차트 생성 실패",
+                    "success": False
+                }, 500
+                
+        except Exception as e:
+            logging.error(f"[{ticker}] Chart generation failed: {e}")
+            return {
+                "analysis_gemini": f"[차트 생성 오류: {str(e)}]",
+                "analysis_openai": f"[차트 생성 오류: {str(e)}]",
+                "summary_gemini": f"차트 생성 오류: {str(e)}",
+                "summary_openai": f"차트 생성 오류: {str(e)}",
+                "success": False
+            }, 500
     
     # 차트 파일에서 날짜 정보 추출하여 display_date 업데이트
     try:

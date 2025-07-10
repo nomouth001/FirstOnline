@@ -51,16 +51,12 @@
                             onclick="sortTable(1, 'text')" data-sort="none">
                             종목명 <span class="sort-indicator"></span>
                         </th>
-                        <th style="padding: 0.75rem; text-align: left; border-bottom: 2px solid #dee2e6; cursor: pointer; user-select: none;" 
+                        <th style="padding: 0.75rem; text-align: center; border-bottom: 2px solid #dee2e6; cursor: pointer; user-select: none;" 
                             onclick="sortTable(2, 'date')" data-sort="none">
                             추가일 <span class="sort-indicator"></span>
                         </th>
                         <th style="padding: 0.75rem; text-align: center; border-bottom: 2px solid #dee2e6; cursor: pointer; user-select: none;" 
                             onclick="sortTable(3, 'date')" data-sort="none">
-                            차트 생성 시간 <span class="sort-indicator"></span>
-                        </th>
-                        <th style="padding: 0.75rem; text-align: center; border-bottom: 2px solid #dee2e6; cursor: pointer; user-select: none;" 
-                            onclick="sortTable(4, 'date')" data-sort="none">
                             분석 생성 시간 <span class="sort-indicator"></span>
                         </th>
                         <th style="padding: 0.75rem; text-align: center; border-bottom: 2px solid #dee2e6;">작업</th>
@@ -85,13 +81,6 @@
                             <td style="padding: 0.75rem; color: #666; font-size: 0.9rem;">
                                 {{ stock.created_at.strftime('%Y-%m-%d %H:%M') if stock.created_at else 'N/A' }}
                             </td>
-                            <td style="padding: 0.75rem; text-align: center; font-size: 0.9rem;" id="chart-time-{{ stock.ticker }}">
-                                {% if file_status.chart.exists %}
-                                    <span style="color: #28a745;">{{ file_status.chart.formatted_time }}</span>
-                                {% else %}
-                                    <span style="color: #6c757d;">생성 안됨</span>
-                                {% endif %}
-                            </td>
                             <td style="padding: 0.75rem; text-align: center; font-size: 0.9rem;" id="analysis-time-{{ stock.ticker }}">
                                 {% if file_status.analysis.exists %}
                                     <span style="color: #28a745;">{{ file_status.analysis.formatted_time }}</span>
@@ -101,11 +90,6 @@
                             </td>
                             <td style="padding: 0.75rem; text-align: center;">
                                 <div style="display: flex; gap: 0.5rem; justify-content: center;">
-                                    <button onclick="generateChart('{{ stock.ticker }}', event)" 
-                                            id="generate-chart-btn-{{ stock.ticker }}"
-                                            class="btn btn-sm {% if file_status.chart.button_status == 'green' %}btn-success{% else %}btn-info{% endif %}"
-                                            data-ticker="{{ stock.ticker }}"
-                                            data-is-us-stock="{{ file_status.is_us_stock|lower }}">차트 생성</button>
                                     <button onclick="viewChartWithConfirmation('{{ stock.ticker }}')" 
                                             id="view-analysis-btn-{{ stock.ticker }}"
                                             class="btn btn-sm {% if file_status.analysis.button_status == 'green' %}btn-success{% else %}btn-primary{% endif %}"
@@ -329,7 +313,7 @@
     function updateButtonStatus(ticker, fileType, timestamp) {
         console.log(`Updating button status for ${ticker} ${fileType} with timestamp:`, timestamp);
         
-        const buttonId = fileType === 'chart' ? `generate-chart-btn-${ticker}` : `view-analysis-btn-${ticker}`;
+        const buttonId = `view-analysis-btn-${ticker}`;
         const button = document.getElementById(buttonId);
         const timeCell = document.getElementById(`${fileType}-time-${ticker}`);
         
@@ -408,40 +392,17 @@
         
         console.log(`Button color decision for ${ticker} ${fileType}: shouldBeGreen=${shouldBeGreen}`);
         
-        // 버튼 색상 업데이트
-        const oldClass = button.className;
-        button.className = button.className.replace(/btn-(success|info|primary)/, 
-            shouldBeGreen ? 'btn-success' : (fileType === 'chart' ? 'btn-info' : 'btn-primary'));
-        
-        console.log(`Button class changed from "${oldClass}" to "${button.className}"`);
-    }
-
-    async function generateChart(ticker, event) {
-        const button = event.target;
-        const originalText = button.textContent;
-        button.textContent = '생성 중...';
-        button.disabled = true;
-
-        try {
-            const res = await fetch(`/generate_chart/${ticker}`);
-            if (res.ok) {
-                const result = await res.json();
-                showInlineMessage(`${ticker} 차트 생성 완료! 이제 'AI 분석 보기'를 클릭하여 확인할 수 있습니다.`, 'success');
-                
-                // 실제 파일 상태를 서버에서 가져와서 업데이트
-                updateFileStatus(ticker);
-            } else {
-                const errorData = await res.json();
-                showInlineMessage(`차트 생성 실패: ${errorData.error || '알 수 없는 오류'}`, 'error');
-            }
-        } catch (error) {
-            showInlineMessage(`차트 생성 중 오류 발생: ${error.message}`, 'error');
-            console.error("Generate chart error:", error);
-        } finally {
-            button.textContent = originalText;
-            button.disabled = false;
+        // 버튼 색상 업데이트 (분석 버튼만)
+        if (fileType === 'analysis') {
+            const oldClass = button.className;
+            button.className = button.className.replace(/btn-(success|primary)/, 
+                shouldBeGreen ? 'btn-success' : 'btn-primary');
+            
+            console.log(`Button class changed from "${oldClass}" to "${button.className}"`);
         }
     }
+
+
 
     // 서버에서 실제 파일 상태를 가져와서 업데이트하는 함수
     async function updateFileStatus(ticker) {
@@ -453,11 +414,6 @@
             console.log(`File status response for ${ticker}:`, data);
             
             if (data.success) {
-                // 차트 상태 업데이트
-                if (data.chart.exists && data.chart.timestamp) {
-                    updateButtonStatus(ticker, 'chart', data.chart.timestamp);
-                }
-                
                 // 분석 상태 업데이트
                 if (data.analysis.exists && data.analysis.timestamp) {
                     updateButtonStatus(ticker, 'analysis', data.analysis.timestamp);

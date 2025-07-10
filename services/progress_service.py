@@ -1,10 +1,11 @@
 import logging
 from datetime import datetime, timedelta
+import traceback
 
-# 실시간 진행상황 추적을 위한 전역 변수
+# 전역 변수로 현재 진행상황 저장
 current_batch_progress = {
     "is_running": False,
-    "type": None,  # "single" 또는 "multiple"
+    "type": None,
     "current_ticker": None,
     "current_list": None,
     "total_tickers": 0,
@@ -19,10 +20,10 @@ def update_progress(ticker=None, processed=0, total=0, list_name=None):
     global current_batch_progress
     
     try:
-    logging.info(f"=== Progress Update Called ===")
-    logging.info(f"Input params: ticker={ticker}, processed={processed}, total={total}, list_name={list_name}")
-    logging.info(f"Current progress before update: {current_batch_progress}")
-    
+        logging.info(f"=== Progress Update Called ===")
+        logging.info(f"Input params: ticker={ticker}, processed={processed}, total={total}, list_name={list_name}")
+        logging.info(f"Current progress before update: {current_batch_progress}")
+        
         # 유효성 검사
         if processed < 0:
             processed = 0
@@ -33,16 +34,16 @@ def update_progress(ticker=None, processed=0, total=0, list_name=None):
             processed = total
         
         # 안전한 업데이트
-    if ticker:
+        if ticker:
             current_batch_progress["current_ticker"] = str(ticker)
-    if processed >= 0:
-        current_batch_progress["processed_tickers"] = processed
-    if total > 0:
-        current_batch_progress["total_tickers"] = total
-    if list_name:
+        if processed >= 0:
+            current_batch_progress["processed_tickers"] = processed
+        if total > 0:
+            current_batch_progress["total_tickers"] = total
+        if list_name:
             current_batch_progress["current_list"] = str(list_name)
-    
-    # 예상 완료 시간 계산
+        
+        # 예상 완료 시간 계산
         try:
             if (current_batch_progress.get("processed_tickers", 0) > 0 and 
                 current_batch_progress.get("start_time") and
@@ -58,8 +59,8 @@ def update_progress(ticker=None, processed=0, total=0, list_name=None):
                     remaining_tickers = total_count - processed_count
                     
                     if remaining_tickers > 0:
-        estimated_remaining = avg_time_per_ticker * remaining_tickers
-        current_batch_progress["estimated_completion"] = datetime.now() + timedelta(seconds=estimated_remaining)
+                        estimated_remaining = avg_time_per_ticker * remaining_tickers
+                        current_batch_progress["estimated_completion"] = datetime.now() + timedelta(seconds=estimated_remaining)
                     else:
                         current_batch_progress["estimated_completion"] = datetime.now()
         except Exception as e:
@@ -126,36 +127,36 @@ def get_current_progress():
     global current_batch_progress
     
     try:
-    logging.info(f"Progress check requested. Current status: {current_batch_progress}")
-    
+        logging.info(f"Progress check requested. Current status: {current_batch_progress}")
+        
         if not current_batch_progress.get("is_running", False):
-        return {
-            "is_running": False,
-            "message": "현재 진행 중인 일괄 처리가 없습니다."
-        }
-    
+            return {
+                "is_running": False,
+                "message": "현재 진행 중인 일괄 처리가 없습니다."
+            }
+        
         # 안전한 데이터 추출 (기본값 제공)
         total_tickers = current_batch_progress.get("total_tickers", 0)
         processed_tickers = current_batch_progress.get("processed_tickers", 0)
         
         # 진행률 계산 (0으로 나누기 방지)
-    progress_percentage = 0
+        progress_percentage = 0
         if total_tickers > 0:
             progress_percentage = (processed_tickers / total_tickers) * 100
-    
-    # 경과 시간 계산
-    elapsed_time = None
+        
+        # 경과 시간 계산
+        elapsed_time = None
         start_time = current_batch_progress.get("start_time")
         if start_time:
             try:
                 elapsed = datetime.now() - start_time
-        elapsed_time = str(elapsed).split('.')[0]  # 마이크로초 제거
+                elapsed_time = str(elapsed).split('.')[0]  # 마이크로초 제거
             except Exception as e:
                 logging.warning(f"Failed to calculate elapsed time: {e}")
                 elapsed_time = "계산 불가"
-    
-    # 예상 완료 시간
-    estimated_completion = None
+        
+        # 예상 완료 시간
+        estimated_completion = None
         estimated_completion_time = current_batch_progress.get("estimated_completion")
         if estimated_completion_time:
             try:
@@ -163,22 +164,22 @@ def get_current_progress():
             except Exception as e:
                 logging.warning(f"Failed to format estimated completion time: {e}")
                 estimated_completion = "계산 불가"
-    
-    response_data = {
-        "is_running": True,
+        
+        response_data = {
+            "is_running": True,
             "type": current_batch_progress.get("type", "unknown"),
             "current_ticker": current_batch_progress.get("current_ticker", "준비 중"),
             "current_list": current_batch_progress.get("current_list", ""),
             "total_tickers": total_tickers,
             "processed_tickers": processed_tickers,
-        "progress_percentage": round(progress_percentage, 1),
-        "elapsed_time": elapsed_time,
+            "progress_percentage": round(progress_percentage, 1),
+            "elapsed_time": elapsed_time,
             "estimated_completion": estimated_completion,
             "stop_requested": current_batch_progress.get("stop_requested", False)
-    }
-    
-    logging.info(f"Progress response: {response_data}")
-    return response_data
+        }
+        
+        logging.info(f"Progress response: {response_data}")
+        return response_data
         
     except Exception as e:
         logging.error(f"Error in get_current_progress: {e}", exc_info=True)

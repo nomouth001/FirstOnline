@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 plt.set_loglevel('warning')
 import time
 import requests
+from services.indicator_service import indicator_service
 
 # 폰트 캐시 미리 로드 및 기본 폰트 설정으로 성능 최적화
 def optimize_matplotlib_fonts():
@@ -186,6 +187,18 @@ def generate_chart(ticker):
         # 월봉 차트
         monthly_df = df.resample("M").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}).dropna()
         monthly_chart_path = generate(monthly_df, "Monthly", "monthly", ticker)
+
+        # 지표 계산 및 저장 통합
+        logging.info(f"[{ticker}] Starting integrated indicator calculation and storage...")
+        try:
+            indicator_results = indicator_service.process_all_indicators(ticker, df)
+            if indicator_results:
+                logging.info(f"[{ticker}] Indicator calculation and storage completed successfully")
+            else:
+                logging.warning(f"[{ticker}] Indicator calculation failed, but continuing with chart generation")
+        except Exception as indicator_error:
+            logging.error(f"[{ticker}] Error in indicator calculation: {str(indicator_error)}")
+            # 지표 계산 실패해도 차트 생성은 계속 진행
 
         logging.info(f"[{ticker}] Chart generation completed successfully. Generated charts: Daily={daily_chart_path is not None}, Weekly={weekly_chart_path is not None}, Monthly={monthly_chart_path is not None}")
         return {

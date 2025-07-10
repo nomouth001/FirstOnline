@@ -7,6 +7,7 @@ from flask import Blueprint, request, jsonify, session, render_template, send_fr
 from models import get_stock_list_path, get_analysis_summary_path, _extract_summary_from_analysis
 from services.chart_service import generate_chart
 from services.analysis_service import analyze_ticker_internal, analyze_ticker_internal_logic, is_valid_analysis_file, analyze_ticker_force_new
+from services.indicator_service import indicator_service
 from services.progress_service import start_batch_progress, end_batch_progress, update_progress, get_current_progress, request_stop, is_stop_requested, clear_stop_request
 from config import ANALYSIS_DIR, MULTI_SUMMARY_DIR, CHART_GENERATION_TIMEOUT, AI_ANALYSIS_TIMEOUT
 from utils.timeout_utils import safe_chart_generation, safe_ai_analysis
@@ -203,10 +204,10 @@ def generate_multiple_lists_analysis_route():
     except json.JSONDecodeError as e:
         logging.exception("JSON decode error in generate_multiple_lists_analysis_route")
         return jsonify({"error": f"Invalid JSON data: {str(e)}"}), 400
-                        except Exception as e:
+    except Exception as e:
         logging.exception("Unexpected error in generate_multiple_lists_analysis_route")
         return jsonify({"error": f"Internal server error: {str(e)}"}), 500
-        finally:
+    finally:
         logging.info("=== Ending generate_multiple_lists_analysis_route ===")
 
 @analysis_bp.route("/get_batch_progress/<list_name>")
@@ -269,13 +270,13 @@ def get_ticker_price_change(ticker):
                 stock_data = ticker_obj.history(start=start_date, end=end_date, auto_adjust=False)
                 
                 if not stock_data.empty and len(stock_data) >= 2:
-        # 최신 종가와 이전 종가 비교
-        latest_close = stock_data['Close'].iloc[-1]
-        previous_close = stock_data['Close'].iloc[-2]
-        
-        # 변화율 계산 (백분율)
-        change_rate = ((latest_close - previous_close) / previous_close) * 100
-        return round(change_rate, 2)
+                    # 최신 종가와 이전 종가 비교
+                    latest_close = stock_data['Close'].iloc[-1]
+                    previous_close = stock_data['Close'].iloc[-2]
+                    
+                    # 변화율 계산 (백분율)
+                    change_rate = ((latest_close - previous_close) / previous_close) * 100
+                    return round(change_rate, 2)
                 else:
                     if attempt < 2:
                         time.sleep(2 * (attempt + 1))
@@ -1257,4 +1258,128 @@ def view_existing_chart(ticker):
 #         logging.exception("Error in generate_multiple_lists_analysis")
 #         return jsonify({"error": f"Failed to process multiple lists: {str(e)}"}), 500
 # ==============================================================================
+
+
+@analysis_bp.route("/get_indicator_data/<ticker>")
+def get_indicator_data(ticker):
+    """지표 데이터와 크로스오버 정보를 반환하는 API"""
+    try:
+        ticker = ticker.upper()
+        
+        # 최신 지표 데이터 가져오기 (최근 1개 데이터만)
+        daily_ohlcv = indicator_service.get_latest_indicator_data(ticker, "ohlcv", "d", rows=1)
+        daily_ema5 = indicator_service.get_latest_indicator_data(ticker, "ema5", "d", rows=1)
+        daily_ema20 = indicator_service.get_latest_indicator_data(ticker, "ema20", "d", rows=1)
+        daily_ema40 = indicator_service.get_latest_indicator_data(ticker, "ema40", "d", rows=1)
+        daily_macd = indicator_service.get_latest_indicator_data(ticker, "macd", "d", rows=1)
+        daily_bollinger = indicator_service.get_latest_indicator_data(ticker, "bollinger", "d", rows=1)
+        daily_rsi = indicator_service.get_latest_indicator_data(ticker, "rsi", "d", rows=1)
+        daily_stochastic = indicator_service.get_latest_indicator_data(ticker, "stochastic", "d", rows=1)
+        daily_volume_5d = indicator_service.get_latest_indicator_data(ticker, "volume_ratio_5d", "d", rows=1)
+        daily_volume_20d = indicator_service.get_latest_indicator_data(ticker, "volume_ratio_20d", "d", rows=1)
+        
+        # 크로스오버 감지
+        daily_crossovers = indicator_service.detect_crossovers(ticker, "d", days_back=30)
+        weekly_crossovers = indicator_service.detect_crossovers(ticker, "w", days_back=30)
+        
+        # 데이터가 없으면 오류 반환
+        if daily_ohlcv is None or len(daily_ohlcv) == 0:
+            return jsonify({"error": f"No indicator data found for {ticker}"}), 404
+        
+        # 최신 데이터 추출
+        latest_data = {}
+        latest_date = daily_ohlcv.index[-1].strftime('%Y-%m-%d')
+        
+        # OHLCV 데이터
+        latest_data['date'] = latest_date
+        latest_data['close'] = round(daily_ohlcv['Close'].iloc[-1], 2)
+        latest_data['volume'] = int(daily_ohlcv['Volume'].iloc[-1])
+        
+        # EMA 데이터
+        if daily_ema5 is not None and len(daily_ema5) > 0:
+            latest_data['ema5'] = round(daily_ema5['EMA'].iloc[-1], 2)
+        if daily_ema20 is not None and len(daily_ema20) > 0:
+            latest_data['ema20'] = round(daily_ema20['EMA'].iloc[-1], 2)
+        if daily_ema40 is not None and len(daily_ema40) > 0:
+            latest_data['ema40'] = round(daily_ema40['EMA'].iloc[-1], 2)
+        
+        # MACD 데이터
+        if daily_macd is not None and len(daily_macd) > 0:
+            latest_data['macd'] = round(daily_macd['MACD'].iloc[-1], 4)
+            latest_data['macd_signal'] = round(daily_macd['MACD_Signal'].iloc[-1], 4)
+            latest_data['macd_histogram'] = round(daily_macd['MACD_Histogram'].iloc[-1], 4)
+        
+        # 볼린저 밴드 데이터
+        if daily_bollinger is not None and len(daily_bollinger) > 0:
+            latest_data['bb_upper'] = round(daily_bollinger['BB_Upper'].iloc[-1], 2)
+            latest_data['bb_lower'] = round(daily_bollinger['BB_Lower'].iloc[-1], 2)
+            latest_data['bb_middle'] = round(daily_bollinger['BB_Middle'].iloc[-1], 2)
+        
+        # RSI 데이터
+        if daily_rsi is not None and len(daily_rsi) > 0:
+            latest_data['rsi'] = round(daily_rsi['RSI'].iloc[-1], 2)
+        
+        # 스토캐스틱 데이터
+        if daily_stochastic is not None and len(daily_stochastic) > 0:
+            latest_data['stoch_k'] = round(daily_stochastic['Stoch_K'].iloc[-1], 2)
+            latest_data['stoch_d'] = round(daily_stochastic['Stoch_D'].iloc[-1], 2)
+        
+        # 거래량 비율 데이터
+        if daily_volume_5d is not None and len(daily_volume_5d) > 0:
+            latest_data['volume_ratio_5d'] = round(daily_volume_5d['Volume_Ratio_5d'].iloc[-1], 2)
+        if daily_volume_20d is not None and len(daily_volume_20d) > 0:
+            latest_data['volume_ratio_20d'] = round(daily_volume_20d['Volume_Ratio_20d'].iloc[-1], 2)
+        
+        # 크로스오버 데이터 처리
+        crossover_data = {}
+        
+        if daily_crossovers:
+            if 'macd' in daily_crossovers:
+                macd_cross = daily_crossovers['macd']
+                crossover_data['daily_macd'] = {
+                    'date': macd_cross['date'].strftime('%Y-%m-%d'),
+                    'type': macd_cross['type'],
+                    'macd': round(float(macd_cross['macd']), 4),
+                    'signal': round(float(macd_cross['signal']), 4)
+                }
+            
+            if 'ema' in daily_crossovers:
+                ema_cross = daily_crossovers['ema']
+                crossover_data['daily_ema'] = {
+                    'date': ema_cross['date'].strftime('%Y-%m-%d'),
+                    'type': ema_cross['type'],
+                    'ema5': round(float(ema_cross['ema5']), 2),
+                    'ema20': round(float(ema_cross['ema20']), 2),
+                    'ema40': round(float(ema_cross['ema40']), 2)
+                }
+        
+        if weekly_crossovers:
+            if 'macd' in weekly_crossovers:
+                macd_cross = weekly_crossovers['macd']
+                crossover_data['weekly_macd'] = {
+                    'date': macd_cross['date'].strftime('%Y-%m-%d'),
+                    'type': macd_cross['type'],
+                    'macd': round(float(macd_cross['macd']), 4),
+                    'signal': round(float(macd_cross['signal']), 4)
+                }
+            
+            if 'ema' in weekly_crossovers:
+                ema_cross = weekly_crossovers['ema']
+                crossover_data['weekly_ema'] = {
+                    'date': ema_cross['date'].strftime('%Y-%m-%d'),
+                    'type': ema_cross['type'],
+                    'ema5': round(float(ema_cross['ema5']), 2),
+                    'ema20': round(float(ema_cross['ema20']), 2),
+                    'ema40': round(float(ema_cross['ema40']), 2)
+                }
+        
+        return jsonify({
+            'ticker': ticker,
+            'latest_data': latest_data,
+            'crossovers': crossover_data
+        }), 200
+        
+    except Exception as e:
+        logging.exception(f"Error getting indicator data for {ticker}")
+        return jsonify({"error": f"Failed to get indicator data for {ticker}: {str(e)}"}), 500
 

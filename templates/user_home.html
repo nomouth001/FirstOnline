@@ -67,10 +67,8 @@
     <tr>
       <th><button onclick="sortTable(0, 'text')">티커 ⇅</button></th>
       <th><button onclick="sortTable(1, 'text')">회사 ⇅</button></th>
-      <th><button onclick="sortTable(2, 'date')">차트 생성 시간 ⇅</button></th>
-      <th><button onclick="sortTable(3, 'date')">분석 생성 시간 ⇅</button></th>
+      <th><button onclick="sortTable(2, 'date')">분석 생성 시간 ⇅</button></th>
       <th>삭제</th>
-      <th>차트 생성</th>
       <th>AI 분석 보기</th>
     </tr>
   </thead>
@@ -302,10 +300,8 @@
           tr.innerHTML = `
             <td>${ticker}</td>
             <td>${row.name}</td>
-            <td id="chart-time-${ticker}">생성 안됨</td>
             <td id="analysis-time-${ticker}">생성 안됨</td>
             <td><button onclick="deleteTicker('${ticker}')">삭제</button></td>
-            <td><button id="generate-chart-btn-${ticker}" data-is-us-stock="${isUsStock}" onclick="generateChart('${ticker}')">차트 생성</button></td>
             <td><button id="view-analysis-btn-${ticker}" data-is-us-stock="${isUsStock}" onclick="viewChartAnalysis('${ticker}')">차트 분석 보기</button></td>
           `;
           tbody.appendChild(tr);
@@ -438,32 +434,7 @@
     }
   }
 
-  async function generateChart(ticker) {
-    const button = event.target;
-    const originalText = button.textContent;
-    button.textContent = '생성 중...';
-    button.disabled = true;
 
-    try {
-      const res = await fetch(`/generate_chart/${ticker}`);
-      if (res.ok) {
-        const result = await res.json();
-        showInlineMessage(`✅ ${ticker} 차트 생성 완료!`, 'success');
-        
-        // 파일 상태 업데이트
-        updateFileStatus(ticker);
-      } else {
-        const errorData = await res.json();
-        showInlineMessage(`❌ 차트 생성 실패: ${errorData.error || '알 수 없는 오류'}`, 'error');
-      }
-    } catch (error) {
-      showInlineMessage(`❌ 차트 생성 중 오류 발생: ${error.message}`, 'error');
-      console.error("Generate chart error:", error);
-    } finally {
-      button.textContent = originalText;
-      button.disabled = false;
-    }
-  }
 
   // 인라인 메시지 표시 함수
   function showInlineMessage(message, type) {
@@ -640,12 +611,6 @@
       if (response.ok) {
         const data = await response.json();
         
-        // 차트 생성 시간 업데이트
-        const chartTimeCell = document.getElementById(`chart-time-${ticker}`);
-        if (chartTimeCell) {
-          chartTimeCell.textContent = data.chart?.formatted_time || '생성 안됨';
-        }
-        
         // 분석 생성 시간 업데이트
         const analysisTimeCell = document.getElementById(`analysis-time-${ticker}`);
         if (analysisTimeCell) {
@@ -662,16 +627,7 @@
 
   // 버튼 상태 업데이트 함수
   function updateButtonStatus(ticker, chartStatus, analysisStatus) {
-    const chartBtn = document.getElementById(`generate-chart-btn-${ticker}`);
     const analysisBtn = document.getElementById(`view-analysis-btn-${ticker}`);
-    
-    if (chartBtn) {
-      if (chartStatus === 'green') {
-        chartBtn.style.backgroundColor = '#28a745';
-      } else {
-        chartBtn.style.backgroundColor = '';
-      }
-    }
     
     if (analysisBtn) {
       if (analysisStatus === 'green') {

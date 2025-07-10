@@ -3,8 +3,6 @@ name: Deploy to AWS Lightsail
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
 
 jobs:
   deploy:
@@ -20,10 +18,10 @@ jobs:
         username: ${{ secrets.LIGHTSAIL_USERNAME }}
         key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
         script: |
-          cd /path/to/your/project
+          cd ~/newsletter-app
           git pull origin main
           source venv/bin/activate
           pip install -r requirements.txt
           python init_db.py
-          sudo systemctl restart your-app-name
+          sudo systemctl restart newsletter
           sudo systemctl restart nginx 

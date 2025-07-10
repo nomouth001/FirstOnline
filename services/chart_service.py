@@ -116,8 +116,16 @@ def download_stock_data_with_retry(ticker, start_date, end_date, max_retries=3, 
         try:
             logging.info(f"[{ticker}] Downloading chart data (attempt {attempt + 1}/{max_retries})...")
             
-            # yfinance가 자체 세션을 사용하도록 세션 파라미터 제거
-            stock_data = yf.download(ticker, start=start_date, end=end_date, auto_adjust=False)
+            # 첫 번째 시도가 아니면 더 긴 지연 시간 적용
+            if attempt > 0:
+                wait_time = delay * (3 ** attempt)  # 2, 6, 18초로 지연 시간 증가
+                logging.info(f"[{ticker}] Waiting {wait_time} seconds before retry...")
+                time.sleep(wait_time)
+            
+            # User-Agent 헤더 추가하여 브라우저로 위장
+            import yfinance as yf
+            stock = yf.Ticker(ticker)
+            stock_data = stock.history(start=start_date, end=end_date, auto_adjust=False)
             
             if not stock_data.empty:
                 logging.info(f"[{ticker}] Chart data downloaded successfully. Shape: {stock_data.shape}")
@@ -132,7 +140,7 @@ def download_stock_data_with_retry(ticker, start_date, end_date, max_retries=3, 
             # 429 오류나 rate limit 관련 오류인 경우 더 긴 대기
             if '429' in error_msg or 'rate' in error_msg or 'too many' in error_msg:
                 if attempt < max_retries - 1:
-                    wait_time = delay * (3 ** attempt)  # 429 오류 시 더 긴 대기
+                    wait_time = delay * (5 ** attempt)  # 429 오류 시 더 긴 대기 (2, 10, 50초)
                     logging.info(f"[{ticker}] Rate limit detected, waiting {wait_time} seconds before retry...")
                     time.sleep(wait_time)
                 else:

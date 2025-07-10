@@ -89,4 +89,35 @@ try:
         os.makedirs(directory, exist_ok=True)
 except Exception as e:
     # 디렉토리 생성 실패시 로그만 남기고 계속 진행
-    print(f"디렉토리 생성 실패: {e}") 
+    print(f"디렉토리 생성 실패: {e}")
+
+# Yahoo Finance API 설정
+YAHOO_FINANCE_CONFIG = {
+    'MAX_RETRIES': 5,                    # 최대 재시도 횟수
+    'INITIAL_DELAY': 3,                  # 초기 지연 시간 (초)
+    'MAX_DELAY': 120,                    # 최대 지연 시간 (초)
+    'RATE_LIMIT_DELAY': 10,              # Rate limit 감지 시 기본 지연 시간
+    'SESSION_TIMEOUT': 30,               # 세션 타임아웃 (초)
+    'CONCURRENT_REQUESTS': 1,            # 동시 요청 수 (1로 제한)
+    'DAILY_REQUEST_LIMIT': 100,          # 일일 요청 제한 (안전을 위한 자체 제한)
+    'REQUEST_INTERVAL': 5,               # 요청 간격 (초)
+}
+
+# 대안 API 설정 (향후 사용을 위한 준비)
+ALTERNATIVE_APIS = {
+    'ALPHA_VANTAGE': {
+        'API_KEY': os.getenv('ALPHA_VANTAGE_API_KEY', ''),
+        'BASE_URL': 'https://www.alphavantage.co/query',
+        'DAILY_LIMIT': 500,
+    },
+    'FINNHUB': {
+        'API_KEY': os.getenv('FINNHUB_API_KEY', ''),
+        'BASE_URL': 'https://finnhub.io/api/v1',
+        'DAILY_LIMIT': 60,
+    },
+    'IEX_CLOUD': {
+        'API_KEY': os.getenv('IEX_CLOUD_API_KEY', ''),
+        'BASE_URL': 'https://cloud.iexapis.com/stable',
+        'DAILY_LIMIT': 100000,
+    }
+} 

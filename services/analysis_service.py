@@ -735,8 +735,8 @@ def download_stock_data_with_retry(ticker, start_date, end_date, max_retries=3, 
             logging.info(f"[{ticker}] Downloading stock data (attempt {attempt + 1}/{max_retries})...")
             
             # yfinance가 자체 세션을 사용하도록 세션 파라미터 제거
-            ticker_obj = yf.Ticker(ticker)
-            stock_data = ticker_obj.history(start=start_date, end=end_date, auto_adjust=False)
+            # chart_service와 동일한 방식으로 yf.download 사용
+            stock_data = yf.download(ticker, start=start_date, end=end_date, auto_adjust=False)
             
             if not stock_data.empty:
                 logging.info(f"[{ticker}] Stock data downloaded successfully. Shape: {stock_data.shape}")

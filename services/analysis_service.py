@@ -726,20 +726,13 @@ def analyze_ticker_internal_logic(ticker, analysis_html_path):
         "success": gemini_succeeded
     }, 200
 
-def download_stock_data_with_retry(ticker, start_date, end_date, max_retries=5, delay=3):
+def download_stock_data_with_retry(ticker, start_date, end_date, max_retries=3, delay=2):
     """
     yfinance API 호출 제한 문제를 해결하기 위한 retry 로직이 포함된 데이터 다운로드 함수
-    웹 애플리케이션 환경에서는 더 강화된 재시도 로직 사용
     """
     for attempt in range(max_retries):
         try:
             logging.info(f"[{ticker}] Downloading stock data (attempt {attempt + 1}/{max_retries})...")
-            
-            # 첫 번째 시도가 아니면 초기 대기
-            if attempt > 0:
-                initial_wait = delay + (attempt * 2)  # 점진적 대기 시간 증가
-                logging.info(f"[{ticker}] Initial wait before attempt {attempt + 1}: {initial_wait} seconds")
-                time.sleep(initial_wait)
             
             # yfinance가 자체 세션을 사용하도록 세션 파라미터 제거
             # chart_service와 동일한 방식으로 yf.download 사용
@@ -756,9 +749,9 @@ def download_stock_data_with_retry(ticker, start_date, end_date, max_retries=5, 
             logging.warning(f"[{ticker}] Download attempt {attempt + 1} failed: {str(e)}")
             
             # 429 오류나 rate limit 관련 오류인 경우 더 긴 대기
-            if '429' in error_msg or 'rate' in error_msg or 'too many' in error_msg or 'delisted' in error_msg:
+            if '429' in error_msg or 'rate' in error_msg or 'too many' in error_msg:
                 if attempt < max_retries - 1:
-                    wait_time = delay * (4 ** attempt)  # 429 오류 시 더 긴 대기 (4배씩 증가)
+                    wait_time = delay * (3 ** attempt)  # 429 오류 시 더 긴 대기
                     logging.info(f"[{ticker}] Rate limit detected, waiting {wait_time} seconds before retry...")
                     time.sleep(wait_time)
                 else:
@@ -766,7 +759,7 @@ def download_stock_data_with_retry(ticker, start_date, end_date, max_retries=5, 
                     raise e
             else:
                 if attempt < max_retries - 1:
-                    wait_time = delay * (3 ** attempt)  # 일반 오류 시 지수 백오프 (3배씩 증가)
+                    wait_time = delay * (2 ** attempt)  # 일반 오류 시 지수 백오프
                     logging.info(f"[{ticker}] Waiting {wait_time} seconds before retry...")
                     time.sleep(wait_time)
                 else:

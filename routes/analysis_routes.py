@@ -203,10 +203,10 @@ def generate_multiple_lists_analysis_route():
     except json.JSONDecodeError as e:
         logging.exception("JSON decode error in generate_multiple_lists_analysis_route")
         return jsonify({"error": f"Invalid JSON data: {str(e)}"}), 400
-    except Exception as e:
+                        except Exception as e:
         logging.exception("Unexpected error in generate_multiple_lists_analysis_route")
         return jsonify({"error": f"Internal server error: {str(e)}"}), 500
-    finally:
+        finally:
         logging.info("=== Ending generate_multiple_lists_analysis_route ===")
 
 @analysis_bp.route("/get_batch_progress/<list_name>")
@@ -269,13 +269,13 @@ def get_ticker_price_change(ticker):
                 stock_data = ticker_obj.history(start=start_date, end=end_date, auto_adjust=False)
                 
                 if not stock_data.empty and len(stock_data) >= 2:
-                    # 최신 종가와 이전 종가 비교
-                    latest_close = stock_data['Close'].iloc[-1]
-                    previous_close = stock_data['Close'].iloc[-2]
-                    
-                    # 변화율 계산 (백분율)
-                    change_rate = ((latest_close - previous_close) / previous_close) * 100
-                    return round(change_rate, 2)
+        # 최신 종가와 이전 종가 비교
+        latest_close = stock_data['Close'].iloc[-1]
+        previous_close = stock_data['Close'].iloc[-2]
+        
+        # 변화율 계산 (백분율)
+        change_rate = ((latest_close - previous_close) / previous_close) * 100
+        return round(change_rate, 2)
                 else:
                     if attempt < 2:
                         time.sleep(2 * (attempt + 1))

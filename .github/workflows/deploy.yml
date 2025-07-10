@@ -1,8 +1,10 @@
 name: Deploy to AWS Lightsail
 
+# 임시로 비활성화 - secrets 설정 후 다시 활성화
 on:
-  push:
-    branches: [ main ]
+  workflow_dispatch:  # 수동 실행만 가능
+  # push:
+  #   branches: [ main ]
 
 jobs:
   deploy:

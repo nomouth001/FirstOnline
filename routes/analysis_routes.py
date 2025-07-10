@@ -251,27 +251,68 @@ def get_batch_progress(list_name):
     }), 200
 
 def get_ticker_price_change(ticker):
-    """종목의 최근 가격 변화율을 계산합니다."""
+    """티커의 최근 가격 변화율을 계산합니다."""
     try:
         import yfinance as yf
+        import requests
+        import time
         from datetime import datetime, timedelta
+        
+        # User-Agent 헤더 설정으로 봇 감지 회피
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
         
         # 최근 5일간 데이터 가져오기
         end_date = datetime.now()
         start_date = end_date - timedelta(days=10)  # 주말 고려해서 10일
         
-        stock_data = yf.Ticker(ticker).history(start=start_date, end=end_date, auto_adjust=False)
+        # retry 로직 적용
+        for attempt in range(3):
+            try:
+                # 세션 생성 및 헤더 설정
+                session = requests.Session()
+                session.headers.update(headers)
+                
+                # yfinance Ticker 객체 생성 시 세션 사용
+                ticker_obj = yf.Ticker(ticker, session=session)
+                stock_data = ticker_obj.history(start=start_date, end=end_date, auto_adjust=False)
+                
+                if not stock_data.empty and len(stock_data) >= 2:
+                    # 최신 종가와 이전 종가 비교
+                    latest_close = stock_data['Close'].iloc[-1]
+                    previous_close = stock_data['Close'].iloc[-2]
+                    
+                    # 변화율 계산 (백분율)
+                    change_rate = ((latest_close - previous_close) / previous_close) * 100
+                    return round(change_rate, 2)
+                else:
+                    if attempt < 2:
+                        time.sleep(2 * (attempt + 1))
+                        continue
+                    else:
+                        return 0.0  # 데이터가 없으면 0% 변화율
+                        
+            except Exception as e:
+                error_msg = str(e).lower()
+                if '429' in error_msg or 'rate' in error_msg or 'too many' in error_msg:
+                    if attempt < 2:
+                        wait_time = 3 * (2 ** attempt)
+                        logging.info(f"[{ticker}] Rate limit detected in price change, waiting {wait_time} seconds...")
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        logging.warning(f"Failed to get price change for {ticker}: {e}")
+                        return 0.0
+                else:
+                    if attempt < 2:
+                        time.sleep(2 * (attempt + 1))
+                        continue
+                    else:
+                        logging.warning(f"Failed to get price change for {ticker}: {e}")
+                        return 0.0
         
-        if stock_data.empty or len(stock_data) < 2:
-            return 0.0  # 데이터가 없으면 0% 변화율
-        
-        # 최신 종가와 이전 종가 비교
-        latest_close = stock_data['Close'].iloc[-1]
-        previous_close = stock_data['Close'].iloc[-2]
-        
-        # 변화율 계산 (백분율)
-        change_rate = ((latest_close - previous_close) / previous_close) * 100
-        return round(change_rate, 2)
+        return 0.0
         
     except Exception as e:
         logging.warning(f"Failed to get price change for {ticker}: {e}")

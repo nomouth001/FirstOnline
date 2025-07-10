@@ -290,25 +290,69 @@ def lookup_ticker():
         return jsonify({"error": "종목 코드가 필요합니다"}), 400
 
     try:
-        stock_info = yf.Ticker(ticker).info
-        name = stock_info.get("longName") or stock_info.get("shortName")
-        sector = stock_info.get("sector", "")
-        industry = stock_info.get("industry", "")
-        market_cap = stock_info.get("marketCap", 0)
-        country = stock_info.get("country", "")
+        import yfinance as yf
+        import requests
+        import time
+        
+        # User-Agent 헤더 설정으로 봇 감지 회피
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        
+        # retry 로직 적용
+        for attempt in range(3):
+            try:
+                # 세션 생성 및 헤더 설정
+                session = requests.Session()
+                session.headers.update(headers)
+                
+                # yfinance Ticker 객체 생성 시 세션 사용
+                ticker_obj = yf.Ticker(ticker, session=session)
+                stock_info = ticker_obj.info
+                name = stock_info.get("longName") or stock_info.get("shortName")
+                sector = stock_info.get("sector", "")
+                industry = stock_info.get("industry", "")
+                market_cap = stock_info.get("marketCap", 0)
+                country = stock_info.get("country", "")
 
-        if name:
-            return jsonify({
-                "ticker": ticker, 
-                "name": name,
-                "sector": sector,
-                "industry": industry,
-                "market_cap": market_cap,
-                "country": country,
-                "success": True
-            })
-        else:
-            return jsonify({"name": None, "message": "종목을 찾을 수 없습니다.", "success": False}), 404
+                if name:
+                    return jsonify({
+                        "ticker": ticker, 
+                        "name": name,
+                        "sector": sector,
+                        "industry": industry,
+                        "market_cap": market_cap,
+                        "country": country,
+                        "success": True
+                    })
+                else:
+                    if attempt < 2:
+                        time.sleep(2 * (attempt + 1))
+                        continue
+                    else:
+                        return jsonify({"name": None, "message": "종목을 찾을 수 없습니다.", "success": False}), 404
+                        
+            except Exception as e:
+                error_msg = str(e).lower()
+                if '429' in error_msg or 'rate' in error_msg or 'too many' in error_msg:
+                    if attempt < 2:
+                        wait_time = 3 * (2 ** attempt)
+                        logger.info(f"[{ticker}] Rate limit detected in user lookup, waiting {wait_time} seconds...")
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        logger.error(f"종목 조회 실패 {ticker}: {e}")
+                        return jsonify({"name": None, "message": "종목 조회에 실패했습니다.", "success": False}), 500
+                else:
+                    if attempt < 2:
+                        time.sleep(2 * (attempt + 1))
+                        continue
+                    else:
+                        logger.error(f"종목 조회 실패 {ticker}: {e}")
+                        return jsonify({"name": None, "message": "종목 조회에 실패했습니다.", "success": False}), 500
+        
+        return jsonify({"name": None, "message": "종목 조회에 실패했습니다.", "success": False}), 500
+        
     except Exception as e:
         logger.error(f"종목 조회 실패 {ticker}: {e}")
         return jsonify({"name": None, "message": "종목 조회에 실패했습니다.", "success": False}), 500
@@ -323,6 +367,15 @@ def search_stocks():
         return jsonify([])
     
     try:
+        import yfinance as yf
+        import requests
+        import time
+        
+        # User-Agent 헤더 설정으로 봇 감지 회피
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        
         # 일반적인 종목 코드들로 검색
         common_tickers = [
             "AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "META", "NVDA", "NFLX", "ADBE", "CRM",
@@ -335,15 +388,68 @@ def search_stocks():
         for ticker in common_tickers:
             if query.upper() in ticker.upper():
                 try:
-                    stock_info = yf.Ticker(ticker).info
-                    name = stock_info.get("longName") or stock_info.get("shortName")
-                    if name:
-                        results.append({
-                            "ticker": ticker,
-                            "name": name,
-                            "sector": stock_info.get("sector", ""),
-                            "country": stock_info.get("country", "")
-                        })
+                    # retry 로직 적용
+                    for attempt in range(2):  # 검색은 2번만 시도
+                        try:
+                            # 세션 생성 및 헤더 설정
+                            session = requests.Session()
+                            session.headers.update(headers)
+                            
+                            # yfinance Ticker 객체 생성 시 세션 사용
+                            ticker_obj = yf.Ticker(ticker, session=session)
+                            stock_info = ticker_obj.info
+                            name = stock_info.get("longName") or stock_info.get("shortName")
+                            
+                            if name:
+                                results.append({
+                                    "ticker": ticker,
+                                    "name": name,
+                                    "sector": stock_info.get("sector", ""),
+                                    "country": stock_info.get("country", "")
+                                })
+                                break
+                            else:
+                                if attempt < 1:
+                                    time.sleep(1)
+                                    continue
+                                else:
+                                    # 기본 정보만 제공
+                                    results.append({
+                                        "ticker": ticker,
+                                        "name": ticker,
+                                        "sector": "",
+                                        "country": ""
+                                    })
+                                    break
+                                    
+                        except Exception as e:
+                            error_msg = str(e).lower()
+                            if '429' in error_msg or 'rate' in error_msg or 'too many' in error_msg:
+                                if attempt < 1:
+                                    time.sleep(2)
+                                    continue
+                                else:
+                                    # 기본 정보만 제공
+                                    results.append({
+                                        "ticker": ticker,
+                                        "name": ticker,
+                                        "sector": "",
+                                        "country": ""
+                                    })
+                                    break
+                            else:
+                                if attempt < 1:
+                                    time.sleep(1)
+                                    continue
+                                else:
+                                    # 기본 정보만 제공
+                                    results.append({
+                                        "ticker": ticker,
+                                        "name": ticker,
+                                        "sector": "",
+                                        "country": ""
+                                    })
+                                    break
                 except:
                     # 기본 정보만 제공
                     results.append({

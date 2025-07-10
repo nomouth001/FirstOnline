@@ -218,13 +218,57 @@ def lookup_ticker():
         return jsonify({"error": "Ticker is required"}), 400
 
     try:
-        stock_info = yf.Ticker(ticker).info
-        name = stock_info.get("longName") or stock_info.get("shortName")
+        import yfinance as yf
+        import requests
+        import time
+        
+        # User-Agent 헤더 설정으로 봇 감지 회피
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        
+        # retry 로직 적용
+        for attempt in range(3):
+            try:
+                # 세션 생성 및 헤더 설정
+                session = requests.Session()
+                session.headers.update(headers)
+                
+                # yfinance Ticker 객체 생성 시 세션 사용
+                ticker_obj = yf.Ticker(ticker, session=session)
+                stock_info = ticker_obj.info
+                name = stock_info.get("longName") or stock_info.get("shortName")
 
-        if name:
-            return jsonify({"ticker": ticker, "name": name})
-        else:
-            return jsonify({"name": None, "message": "Ticker not found or no name available."}), 404
+                if name:
+                    return jsonify({"ticker": ticker, "name": name})
+                else:
+                    if attempt < 2:
+                        time.sleep(2 * (attempt + 1))
+                        continue
+                    else:
+                        return jsonify({"name": None, "message": "Ticker not found or no name available."}), 404
+                        
+            except Exception as e:
+                error_msg = str(e).lower()
+                if '429' in error_msg or 'rate' in error_msg or 'too many' in error_msg:
+                    if attempt < 2:
+                        wait_time = 3 * (2 ** attempt)
+                        logging.info(f"[{ticker}] Rate limit detected in lookup, waiting {wait_time} seconds...")
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        logging.error(f"Error looking up ticker {ticker}: {e}")
+                        return jsonify({"name": None, "message": "Failed to lookup ticker."}), 500
+                else:
+                    if attempt < 2:
+                        time.sleep(2 * (attempt + 1))
+                        continue
+                    else:
+                        logging.error(f"Error looking up ticker {ticker}: {e}")
+                        return jsonify({"name": None, "message": "Failed to lookup ticker."}), 500
+        
+        return jsonify({"name": None, "message": "Failed to lookup ticker."}), 500
+        
     except Exception as e:
         logging.error(f"Error looking up ticker {ticker}: {e}")
         return jsonify({"name": None, "message": "Failed to lookup ticker."}), 500

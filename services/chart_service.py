@@ -10,6 +10,8 @@ fm._log.setLevel(logging.WARNING)
 # matplotlib 전체 로깅 레벨도 WARNING으로 설정
 import matplotlib.pyplot as plt
 plt.set_loglevel('warning')
+import time
+import requests
 
 # 폰트 캐시 미리 로드 및 기본 폰트 설정으로 성능 최적화
 def optimize_matplotlib_fonts():
@@ -105,6 +107,56 @@ def generate_with_timeout(df_input, freq_label, suffix):
     logging.info(f"{freq_label} chart created successfully")
     return result
 
+def download_stock_data_with_retry(ticker, start_date, end_date, max_retries=3, delay=2):
+    """
+    yfinance API 호출 제한 문제를 해결하기 위한 retry 로직이 포함된 데이터 다운로드 함수
+    """
+    # User-Agent 헤더 설정으로 봇 감지 회피
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
+    
+    for attempt in range(max_retries):
+        try:
+            logging.info(f"[{ticker}] Downloading chart data (attempt {attempt + 1}/{max_retries})...")
+            
+            # 세션 생성 및 헤더 설정
+            session = requests.Session()
+            session.headers.update(headers)
+            
+            # yfinance download 함수 사용 시 세션 전달
+            stock_data = yf.download(ticker, start=start_date, end=end_date, auto_adjust=False, session=session)
+            
+            if not stock_data.empty:
+                logging.info(f"[{ticker}] Chart data downloaded successfully. Shape: {stock_data.shape}")
+                return stock_data
+            else:
+                logging.warning(f"[{ticker}] Empty chart data received on attempt {attempt + 1}")
+                
+        except Exception as e:
+            error_msg = str(e).lower()
+            logging.warning(f"[{ticker}] Chart data download attempt {attempt + 1} failed: {str(e)}")
+            
+            # 429 오류나 rate limit 관련 오류인 경우 더 긴 대기
+            if '429' in error_msg or 'rate' in error_msg or 'too many' in error_msg:
+                if attempt < max_retries - 1:
+                    wait_time = delay * (3 ** attempt)  # 429 오류 시 더 긴 대기
+                    logging.info(f"[{ticker}] Rate limit detected, waiting {wait_time} seconds before retry...")
+                    time.sleep(wait_time)
+                else:
+                    logging.error(f"[{ticker}] Rate limit exceeded, all attempts failed")
+                    raise e
+            else:
+                if attempt < max_retries - 1:
+                    wait_time = delay * (2 ** attempt)  # 일반 오류 시 지수 백오프
+                    logging.info(f"[{ticker}] Waiting {wait_time} seconds before retry...")
+                    time.sleep(wait_time)
+                else:
+                    logging.error(f"[{ticker}] All download attempts failed")
+                    raise e
+    
+    return pd.DataFrame()  # 빈 DataFrame 반환
+
 def generate_chart(ticker):
     """주식 차트를 생성합니다."""
     logging.info(f"[{ticker}] Starting chart generation process...")
@@ -115,7 +167,7 @@ def generate_chart(ticker):
 
     try:
         logging.info(f"[{ticker}] Downloading data from yfinance...")
-        df = yf.download(ticker, start=start, end=datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1), auto_adjust=False)
+        df = download_stock_data_with_retry(ticker, start, datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1))
         logging.info(f"[{ticker}] Data download completed. DataFrame shape: {df.shape}")
         
         if df.empty:

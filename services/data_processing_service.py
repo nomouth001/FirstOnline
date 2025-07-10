@@ -8,6 +8,59 @@ from ta.trend import EMAIndicator
 from ta.trend import MACD
 from ta.volatility import BollingerBands
 from ta.trend import IchimokuIndicator
+import time
+import requests
+
+def download_stock_data_with_retry(ticker, start_date, end_date, max_retries=3, delay=2):
+    """
+    yfinance API 호출 제한 문제를 해결하기 위한 retry 로직이 포함된 데이터 다운로드 함수
+    """
+    # User-Agent 헤더 설정으로 봇 감지 회피
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
+    
+    for attempt in range(max_retries):
+        try:
+            logging.info(f"[{ticker}] Downloading data processing data (attempt {attempt + 1}/{max_retries})...")
+            
+            # 세션 생성 및 헤더 설정
+            session = requests.Session()
+            session.headers.update(headers)
+            
+            # yfinance Ticker 객체 생성 시 세션 사용
+            ticker_obj = yf.Ticker(ticker, session=session)
+            stock_data = ticker_obj.history(start=start_date, end=end_date, auto_adjust=False)
+            
+            if not stock_data.empty:
+                logging.info(f"[{ticker}] Data processing data downloaded successfully. Shape: {stock_data.shape}")
+                return stock_data
+            else:
+                logging.warning(f"[{ticker}] Empty data processing data received on attempt {attempt + 1}")
+                
+        except Exception as e:
+            error_msg = str(e).lower()
+            logging.warning(f"[{ticker}] Data processing download attempt {attempt + 1} failed: {str(e)}")
+            
+            # 429 오류나 rate limit 관련 오류인 경우 더 긴 대기
+            if '429' in error_msg or 'rate' in error_msg or 'too many' in error_msg:
+                if attempt < max_retries - 1:
+                    wait_time = delay * (3 ** attempt)  # 429 오류 시 더 긴 대기
+                    logging.info(f"[{ticker}] Rate limit detected, waiting {wait_time} seconds before retry...")
+                    time.sleep(wait_time)
+                else:
+                    logging.error(f"[{ticker}] Rate limit exceeded, all attempts failed")
+                    raise e
+            else:
+                if attempt < max_retries - 1:
+                    wait_time = delay * (2 ** attempt)  # 일반 오류 시 지수 백오프
+                    logging.info(f"[{ticker}] Waiting {wait_time} seconds before retry...")
+                    time.sleep(wait_time)
+                else:
+                    logging.error(f"[{ticker}] All download attempts failed")
+                    raise e
+    
+    return pd.DataFrame()  # 빈 DataFrame 반환
 
 def safe_last_value(series):
     """시리즈의 마지막 값을 안전하게 반환합니다."""
@@ -101,7 +154,7 @@ def prepare_stock_data(ticker, display_date):
         data_end_date = datetime.strptime(display_date, "%Y-%m-%d")
         data_fetch_start_date = data_end_date - timedelta(days=5*365 + 60)
 
-        stock_data_full = yf.Ticker(ticker).history(start=data_fetch_start_date, end=data_end_date + timedelta(days=1), auto_adjust=False)
+        stock_data_full = download_stock_data_with_retry(ticker, data_fetch_start_date, data_end_date + timedelta(days=1))
         
         if stock_data_full.empty:
              raise ValueError(f"No stock data found for {ticker} for indicator calculation up to {data_end_date.strftime('%Y-%m-%d')}.")

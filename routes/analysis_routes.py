@@ -254,14 +254,8 @@ def get_ticker_price_change(ticker):
     """티커의 최근 가격 변화율을 계산합니다."""
     try:
         import yfinance as yf
-        import requests
         import time
         from datetime import datetime, timedelta
-        
-        # User-Agent 헤더 설정으로 봇 감지 회피
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
         
         # 최근 5일간 데이터 가져오기
         end_date = datetime.now()
@@ -270,12 +264,8 @@ def get_ticker_price_change(ticker):
         # retry 로직 적용
         for attempt in range(3):
             try:
-                # 세션 생성 및 헤더 설정
-                session = requests.Session()
-                session.headers.update(headers)
-                
-                # yfinance Ticker 객체 생성 시 세션 사용
-                ticker_obj = yf.Ticker(ticker, session=session)
+                # yfinance가 자체 세션을 사용하도록 세션 파라미터 제거
+                ticker_obj = yf.Ticker(ticker)
                 stock_data = ticker_obj.history(start=start_date, end=end_date, auto_adjust=False)
                 
                 if not stock_data.empty and len(stock_data) >= 2:

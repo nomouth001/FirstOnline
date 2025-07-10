@@ -111,21 +111,12 @@ def download_stock_data_with_retry(ticker, start_date, end_date, max_retries=3, 
     """
     yfinance API 호출 제한 문제를 해결하기 위한 retry 로직이 포함된 데이터 다운로드 함수
     """
-    # User-Agent 헤더 설정으로 봇 감지 회피
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-    }
-    
     for attempt in range(max_retries):
         try:
             logging.info(f"[{ticker}] Downloading chart data (attempt {attempt + 1}/{max_retries})...")
             
-            # 세션 생성 및 헤더 설정
-            session = requests.Session()
-            session.headers.update(headers)
-            
-            # yfinance download 함수 사용 시 세션 전달
-            stock_data = yf.download(ticker, start=start_date, end=end_date, auto_adjust=False, session=session)
+            # yfinance가 자체 세션을 사용하도록 세션 파라미터 제거
+            stock_data = yf.download(ticker, start=start_date, end=end_date, auto_adjust=False)
             
             if not stock_data.empty:
                 logging.info(f"[{ticker}] Chart data downloaded successfully. Shape: {stock_data.shape}")

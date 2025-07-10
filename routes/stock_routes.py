@@ -219,23 +219,13 @@ def lookup_ticker():
 
     try:
         import yfinance as yf
-        import requests
         import time
-        
-        # User-Agent 헤더 설정으로 봇 감지 회피
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
         
         # retry 로직 적용
         for attempt in range(3):
             try:
-                # 세션 생성 및 헤더 설정
-                session = requests.Session()
-                session.headers.update(headers)
-                
-                # yfinance Ticker 객체 생성 시 세션 사용
-                ticker_obj = yf.Ticker(ticker, session=session)
+                # yfinance가 자체 세션을 사용하도록 세션 파라미터 제거
+                ticker_obj = yf.Ticker(ticker)
                 stock_info = ticker_obj.info
                 name = stock_info.get("longName") or stock_info.get("shortName")
 

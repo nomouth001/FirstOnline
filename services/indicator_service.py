@@ -128,9 +128,9 @@ class IndicatorService:
         
         try:
             macd_data = pd.DataFrame(index=ohlcv_data.index)
-            macd_data['MACD'] = ta.trend.macd_diff(ohlcv_data['Close'])
-            macd_data['MACD_Signal'] = ta.trend.macd_signal(ohlcv_data['Close'])
-            macd_data['MACD_Histogram'] = ta.trend.macd(ohlcv_data['Close'])
+            macd_data['MACD'] = ta.trend.macd(ohlcv_data['Close'])              # MACD Line
+            macd_data['MACD_Signal'] = ta.trend.macd_signal(ohlcv_data['Close'])  # Signal Line
+            macd_data['MACD_Histogram'] = ta.trend.macd_diff(ohlcv_data['Close'])  # Histogram (MACD - Signal)
             macd_data['Close'] = ohlcv_data['Close']
             
             filename = self.generate_filename(ticker, "macd", timeframe, timestamp)
@@ -347,22 +347,22 @@ class IndicatorService:
             return None
     
     def _detect_ema_crossover(self, ema5_data, ema20_data, ema40_data):
-        """EMA 크로스오버 감지 (대순환 분석 적용)"""
+        """EMA 크로스오버 감지 (기본 감지 + 대순환 분석)"""
         try:
             # 공통 인덱스 찾기
             common_index = ema5_data.index.intersection(ema20_data.index).intersection(ema40_data.index)
-            if len(common_index) < 10:  # 최소 10개 데이터 필요
+            if len(common_index) < 5:  # 최소 5개 데이터 필요
                 return None
             
-            # 최근 데이터만 사용
-            recent_index = common_index[-10:]
+            # 최근 30일 데이터 사용
+            recent_index = common_index[-30:]
             
             # EMA 데이터 정리
             ema5_values = ema5_data.loc[recent_index, 'EMA']
             ema20_values = ema20_data.loc[recent_index, 'EMA']
             ema40_values = ema40_data.loc[recent_index, 'EMA']
             
-            # 각 날짜의 EMA 상태 분석
+            # 기본 EMA5/EMA20 크로스오버 감지 (더 확실한 방법)
             crossover_events = []
             
             for i in range(1, len(recent_index)):
@@ -379,17 +379,20 @@ class IndicatorService:
                 curr_ema20 = ema20_values.iloc[i]
                 curr_ema40 = ema40_values.iloc[i]
                 
-                # 이전 상태와 현재 상태 분류
-                prev_state = self._classify_ema_state(prev_ema5, prev_ema20, prev_ema40)
-                curr_state = self._classify_ema_state(curr_ema5, curr_ema20, curr_ema40)
+                # 1. 기본 EMA5/EMA20 크로스오버 감지
+                basic_crossover = self._detect_basic_ema_crossover(prev_ema5, prev_ema20, curr_ema5, curr_ema20)
                 
-                # 크로스오버 감지
-                crossover_type = self._detect_crossover_type(prev_state, curr_state, prev_ema5, prev_ema20, prev_ema40, curr_ema5, curr_ema20, curr_ema40)
-                
-                if crossover_type:
+                if basic_crossover:
+                    # 2. 대순환 분석 추가
+                    prev_state = self._classify_ema_state(prev_ema5, prev_ema20, prev_ema40)
+                    curr_state = self._classify_ema_state(curr_ema5, curr_ema20, curr_ema40)
+                    
+                    # 3. 정밀한 크로스오버 타입 감지
+                    advanced_crossover = self._detect_crossover_type(prev_state, curr_state, prev_ema5, prev_ema20, prev_ema40, curr_ema5, curr_ema20, curr_ema40)
+                    
                     crossover_events.append({
                         'date': curr_date,
-                        'type': crossover_type,
+                        'type': advanced_crossover if advanced_crossover else basic_crossover,
                         'ema5': curr_ema5,
                         'ema20': curr_ema20,
                         'ema40': curr_ema40,
@@ -406,6 +409,18 @@ class IndicatorService:
         except Exception as e:
             logging.error(f"Error detecting EMA crossover: {str(e)}")
             return None
+    
+    def _detect_basic_ema_crossover(self, prev_ema5, prev_ema20, curr_ema5, curr_ema20):
+        """기본 EMA5/EMA20 크로스오버 감지"""
+        # 골든크로스: EMA5가 EMA20을 상향 돌파
+        if prev_ema5 <= prev_ema20 and curr_ema5 > curr_ema20:
+            return "Golden Cross"
+        
+        # 데드크로스: EMA5가 EMA20을 하향 돌파
+        elif prev_ema5 >= prev_ema20 and curr_ema5 < curr_ema20:
+            return "Dead Cross"
+        
+        return None
     
     def _classify_ema_state(self, ema5, ema20, ema40):
         """EMA 상태 분류 (대순환 분석 기준)"""

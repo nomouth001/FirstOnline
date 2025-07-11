@@ -174,11 +174,17 @@ class DatabaseMigrationManager:
             raise
     
     def check_table_exists(self, table_name: str) -> bool:
-        """테이블 존재 여부 확인"""
+        """테이블 존재 여부 확인 (SQLite/PostgreSQL 호환)"""
         try:
             with app.app_context():
                 with db.engine.connect() as conn:
-                    result = conn.execute(db.text(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}'"))
+                    # 데이터베이스 엔진에 따라 다른 쿼리 사용
+                    if 'sqlite' in str(db.engine.url).lower():
+                        # SQLite용 쿼리
+                        result = conn.execute(db.text(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}'"))
+                    else:
+                        # PostgreSQL용 쿼리
+                        result = conn.execute(db.text(f"SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename='{table_name}'"))
                     return result.fetchone() is not None
         except Exception:
             return False

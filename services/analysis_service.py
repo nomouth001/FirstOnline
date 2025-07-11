@@ -21,6 +21,133 @@ import time
 
 logger = logging.getLogger(__name__)
 
+def get_indicator_data_for_analysis(ticker):
+    """분석 페이지에서 사용할 지표 데이터를 가져옵니다."""
+    try:
+        # 최신 지표 데이터 가져오기 (최근 1개 데이터만)
+        daily_ohlcv = indicator_service.get_latest_indicator_data(ticker, "ohlcv", "d", rows=2)
+        daily_ema5 = indicator_service.get_latest_indicator_data(ticker, "ema5", "d", rows=1)
+        daily_ema20 = indicator_service.get_latest_indicator_data(ticker, "ema20", "d", rows=1)
+        daily_ema40 = indicator_service.get_latest_indicator_data(ticker, "ema40", "d", rows=1)
+        daily_macd = indicator_service.get_latest_indicator_data(ticker, "macd", "d", rows=1)
+        daily_bollinger = indicator_service.get_latest_indicator_data(ticker, "bollinger", "d", rows=1)
+        daily_rsi = indicator_service.get_latest_indicator_data(ticker, "rsi", "d", rows=1)
+        daily_stochastic = indicator_service.get_latest_indicator_data(ticker, "stochastic", "d", rows=1)
+        daily_volume_5d = indicator_service.get_latest_indicator_data(ticker, "volume_ratio_5d", "d", rows=1)
+        daily_volume_20d = indicator_service.get_latest_indicator_data(ticker, "volume_ratio_20d", "d", rows=1)
+        daily_volume_40d = indicator_service.get_latest_indicator_data(ticker, "volume_ratio_40d", "d", rows=1)
+        
+        # 크로스오버 감지
+        daily_crossovers = indicator_service.detect_crossovers(ticker, "d", days_back=30)
+        weekly_crossovers = indicator_service.detect_crossovers(ticker, "w", days_back=30)
+        
+        # 데이터가 없으면 None 반환
+        if daily_ohlcv is None or len(daily_ohlcv) == 0:
+            logging.warning(f"[{ticker}] No indicator data found for analysis")
+            return None, None
+        
+        # 최신 데이터 추출
+        indicator_data = {}
+        latest_date = daily_ohlcv.index[-1].strftime('%Y-%m-%d')
+        
+        # OHLCV 데이터
+        indicator_data['date'] = latest_date
+        indicator_data['close'] = round(daily_ohlcv['Close'].iloc[-1], 2)
+        indicator_data['volume'] = int(daily_ohlcv['Volume'].iloc[-1])
+        
+        # 가격 변화율 계산
+        if len(daily_ohlcv) >= 2:
+            current_close = daily_ohlcv['Close'].iloc[-1]
+            previous_close = daily_ohlcv['Close'].iloc[-2]
+            price_change_rate = ((current_close - previous_close) / previous_close) * 100
+            indicator_data['price_change_rate'] = round(price_change_rate, 2)
+        
+        # EMA 데이터
+        if daily_ema5 is not None and len(daily_ema5) > 0:
+            indicator_data['ema5'] = round(daily_ema5['EMA'].iloc[-1], 2)
+        if daily_ema20 is not None and len(daily_ema20) > 0:
+            indicator_data['ema20'] = round(daily_ema20['EMA'].iloc[-1], 2)
+        if daily_ema40 is not None and len(daily_ema40) > 0:
+            indicator_data['ema40'] = round(daily_ema40['EMA'].iloc[-1], 2)
+        
+        # MACD 데이터
+        if daily_macd is not None and len(daily_macd) > 0:
+            indicator_data['macd'] = round(daily_macd['MACD'].iloc[-1], 4)
+            indicator_data['macd_signal'] = round(daily_macd['MACD_Signal'].iloc[-1], 4)
+            indicator_data['macd_histogram'] = round(daily_macd['MACD_Histogram'].iloc[-1], 4)
+        
+        # 볼린저 밴드 데이터
+        if daily_bollinger is not None and len(daily_bollinger) > 0:
+            indicator_data['bb_upper'] = round(daily_bollinger['BB_Upper'].iloc[-1], 2)
+            indicator_data['bb_lower'] = round(daily_bollinger['BB_Lower'].iloc[-1], 2)
+            indicator_data['bb_middle'] = round(daily_bollinger['BB_Middle'].iloc[-1], 2)
+        
+        # RSI 데이터
+        if daily_rsi is not None and len(daily_rsi) > 0:
+            indicator_data['rsi'] = round(daily_rsi['RSI'].iloc[-1], 2)
+        
+        # 스토캐스틱 데이터
+        if daily_stochastic is not None and len(daily_stochastic) > 0:
+            indicator_data['stoch_k'] = round(daily_stochastic['Stoch_K'].iloc[-1], 2)
+            indicator_data['stoch_d'] = round(daily_stochastic['Stoch_D'].iloc[-1], 2)
+        
+        # 거래량 비율 데이터
+        if daily_volume_5d is not None and len(daily_volume_5d) > 0:
+            indicator_data['volume_ratio_5d'] = round(daily_volume_5d['Volume_Ratio_5d'].iloc[-1], 2)
+        if daily_volume_20d is not None and len(daily_volume_20d) > 0:
+            indicator_data['volume_ratio_20d'] = round(daily_volume_20d['Volume_Ratio_20d'].iloc[-1], 2)
+        if daily_volume_40d is not None and len(daily_volume_40d) > 0:
+            indicator_data['volume_ratio_40d'] = round(daily_volume_40d['Volume_Ratio_40d'].iloc[-1], 2)
+        
+        # 크로스오버 데이터 처리
+        crossover_data = {}
+        
+        if daily_crossovers:
+            if 'macd' in daily_crossovers:
+                macd_cross = daily_crossovers['macd']
+                crossover_data['daily_macd'] = {
+                    'date': macd_cross['date'].strftime('%Y-%m-%d'),
+                    'type': macd_cross['type'],
+                    'macd': round(float(macd_cross['macd']), 4),
+                    'signal': round(float(macd_cross['signal']), 4)
+                }
+            
+            if 'ema' in daily_crossovers:
+                ema_cross = daily_crossovers['ema']
+                crossover_data['daily_ema'] = {
+                    'date': ema_cross['date'].strftime('%Y-%m-%d'),
+                    'type': ema_cross['type'],
+                    'ema5': round(float(ema_cross['ema5']), 2),
+                    'ema20': round(float(ema_cross['ema20']), 2),
+                    'ema40': round(float(ema_cross['ema40']), 2)
+                }
+        
+        if weekly_crossovers:
+            if 'macd' in weekly_crossovers:
+                macd_cross = weekly_crossovers['macd']
+                crossover_data['weekly_macd'] = {
+                    'date': macd_cross['date'].strftime('%Y-%m-%d'),
+                    'type': macd_cross['type'],
+                    'macd': round(float(macd_cross['macd']), 4),
+                    'signal': round(float(macd_cross['signal']), 4)
+                }
+            
+            if 'ema' in weekly_crossovers:
+                ema_cross = weekly_crossovers['ema']
+                crossover_data['weekly_ema'] = {
+                    'date': ema_cross['date'].strftime('%Y-%m-%d'),
+                    'type': ema_cross['type'],
+                    'ema5': round(float(ema_cross['ema5']), 2),
+                    'ema20': round(float(ema_cross['ema20']), 2),
+                    'ema40': round(float(ema_cross['ema40']), 2)
+                }
+        
+        return indicator_data, crossover_data
+        
+    except Exception as e:
+        logging.error(f"[{ticker}] Error getting indicator data for analysis: {str(e)}")
+        return None, None
+
 def analyze_ticker_fallback_calculation(ticker, display_date, charts, daily_b64, weekly_b64, monthly_b64, analysis_html_path):
     """
     저장된 지표 파일이 없을 때 기존 방식으로 계산하는 fallback 함수
@@ -516,13 +643,23 @@ def analyze_ticker_internal_logic(ticker, analysis_html_path):
         summary_gemini = _extract_summary_from_analysis(analysis_gemini)
         logging.info(f"[{ticker}] Summary extracted successfully")
 
+    # 지표 데이터 가져오기
+    logging.info(f"[{ticker}] Getting indicator data for analysis...")
+    indicator_data, crossover_data = get_indicator_data_for_analysis(ticker)
+    
     # HTML 파일 저장
     logging.info(f"[{ticker}] Saving HTML analysis file...")
     try:
         # AI 분석 성공 여부와 관계없이 HTML 파일 생성
         if current_app:
             # 이미 애플리케이션 컨텍스트 내에 있는 경우
-            rendered_html = render_template("charts.html", ticker=ticker, charts=charts, date=display_date, analysis_gemini=analysis_gemini)
+            rendered_html = render_template("charts.html", 
+                                          ticker=ticker, 
+                                          charts=charts, 
+                                          date=display_date, 
+                                          analysis_gemini=analysis_gemini,
+                                          indicator_data=indicator_data,
+                                          crossover_data=crossover_data)
             with open(analysis_html_path, 'w', encoding='utf-8') as f:
                 f.write(rendered_html)
             logging.info(f"[{ticker}] HTML analysis file saved successfully")
@@ -530,7 +667,13 @@ def analyze_ticker_internal_logic(ticker, analysis_html_path):
             # 애플리케이션 컨텍스트 외부에 있는 경우
             from app import app
             with app.app_context():
-                rendered_html = render_template("charts.html", ticker=ticker, charts=charts, date=display_date, analysis_gemini=analysis_gemini)
+                rendered_html = render_template("charts.html", 
+                                              ticker=ticker, 
+                                              charts=charts, 
+                                              date=display_date, 
+                                              analysis_gemini=analysis_gemini,
+                                              indicator_data=indicator_data,
+                                              crossover_data=crossover_data)
                 with open(analysis_html_path, 'w', encoding='utf-8') as f:
                     f.write(rendered_html)
                 logging.info(f"[{ticker}] HTML analysis file saved successfully with app_context")

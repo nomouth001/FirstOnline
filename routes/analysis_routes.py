@@ -761,6 +761,28 @@ def force_new_analysis_with_timestamp(ticker):
         logging.exception(f"Force new analysis with timestamp failed for {ticker}")
         return f"Error: Force new analysis failed for {ticker}: {e}", 500
 
+@analysis_bp.route("/get_indicator_data/<ticker>")
+def get_indicator_data_api(ticker):
+    """지표 데이터 API - 동적으로 지표 데이터를 가져올 때 사용"""
+    try:
+        ticker = ticker.upper()
+        from services.analysis_service import get_indicator_data_for_analysis
+        
+        indicator_data, crossover_data = get_indicator_data_for_analysis(ticker)
+        
+        if indicator_data is None:
+            return jsonify({"error": f"No indicator data found for {ticker}"}), 404
+        
+        return jsonify({
+            'ticker': ticker,
+            'indicator_data': indicator_data,
+            'crossover_data': crossover_data
+        }), 200
+        
+    except Exception as e:
+        logging.exception(f"Error getting indicator data for {ticker}")
+        return jsonify({"error": f"Failed to get indicator data for {ticker}: {str(e)}"}), 500
+
 @analysis_bp.route("/view_existing_chart/<ticker>")
 def view_existing_chart(ticker):
     """기존 분석 파일을 보여줍니다."""

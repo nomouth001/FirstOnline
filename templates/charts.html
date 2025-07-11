@@ -153,6 +153,72 @@
             padding: 20px;
             color: #666;
         }
+        
+        /* 지표 테이블 스타일 */
+        .indicator-section {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        
+        .indicator-table-wrapper {
+            overflow-x: auto;
+            margin-bottom: 20px;
+        }
+        
+        .indicator-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        
+        .indicator-table th,
+        .indicator-table td {
+            border: 1px solid #ddd;
+            padding: 8px 12px;
+            text-align: left;
+        }
+        
+        .indicator-table th {
+            background-color: #f8f9fa;
+            font-weight: bold;
+            color: #333;
+        }
+        
+        .indicator-table .value {
+            font-weight: bold;
+            font-family: monospace;
+        }
+        
+        .positive {
+            color: #e74c3c;
+        }
+        
+        .negative {
+            color: #3498db;
+        }
+        
+        .neutral {
+            color: #7f8c8d;
+        }
+        
+        .crossover-info {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 10px;
+        }
+        
+        .crossover-item {
+            margin-bottom: 8px;
+            padding: 5px 0;
+        }
+        
+        .crossover-item:last-child {
+            margin-bottom: 0;
+        }
     </style>
 </head>
 <body>
@@ -195,6 +261,240 @@
             </div>
         </div>
     </div>
+
+    <!-- 지표 테이블 섹션 -->
+    {% if indicator_data %}
+    <div class="indicator-section">
+        <h3>📊 기술지표 분석</h3>
+        <div class="indicator-table-wrapper">
+            <table class="indicator-table">
+                <thead>
+                    <tr>
+                        <th>항목</th>
+                        <th>값</th>
+                        <th>비고</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- 기본 정보 -->
+                    <tr>
+                        <td><strong>종가</strong></td>
+                        <td class="value">${{ indicator_data.close }}</td>
+                        <td>{{ indicator_data.date }}</td>
+                    </tr>
+                    {% if indicator_data.price_change_rate %}
+                    <tr>
+                        <td><strong>등락률</strong></td>
+                        <td class="value {% if indicator_data.price_change_rate > 0 %}positive{% elif indicator_data.price_change_rate < 0 %}negative{% endif %}">
+                            {{ indicator_data.price_change_rate }}%
+                        </td>
+                        <td>전일 대비</td>
+                    </tr>
+                    {% endif %}
+                    
+                    <!-- EMA 지표 -->
+                    {% if indicator_data.ema5 %}
+                    <tr>
+                        <td><strong>EMA5</strong></td>
+                        <td class="value">${{ indicator_data.ema5 }}</td>
+                        <td>5일 지수이동평균</td>
+                    </tr>
+                    {% endif %}
+                    {% if indicator_data.ema20 %}
+                    <tr>
+                        <td><strong>EMA20</strong></td>
+                        <td class="value">${{ indicator_data.ema20 }}</td>
+                        <td>20일 지수이동평균</td>
+                    </tr>
+                    {% endif %}
+                    {% if indicator_data.ema40 %}
+                    <tr>
+                        <td><strong>EMA40</strong></td>
+                        <td class="value">${{ indicator_data.ema40 }}</td>
+                        <td>40일 지수이동평균</td>
+                    </tr>
+                    {% endif %}
+                    
+                    <!-- EMA 배열 -->
+                    {% if indicator_data.ema5 and indicator_data.ema20 and indicator_data.ema40 %}
+                    <tr>
+                        <td><strong>EMA 배열</strong></td>
+                        <td class="value">
+                            {% if indicator_data.close >= indicator_data.ema5 >= indicator_data.ema20 >= indicator_data.ema40 %}
+                                종가 > EMA5 > EMA20 > EMA40
+                            {% elif indicator_data.close >= indicator_data.ema5 >= indicator_data.ema40 >= indicator_data.ema20 %}
+                                종가 > EMA5 > EMA40 > EMA20
+                            {% elif indicator_data.close >= indicator_data.ema20 >= indicator_data.ema5 >= indicator_data.ema40 %}
+                                종가 > EMA20 > EMA5 > EMA40
+                            {% elif indicator_data.close >= indicator_data.ema20 >= indicator_data.ema40 >= indicator_data.ema5 %}
+                                종가 > EMA20 > EMA40 > EMA5
+                            {% elif indicator_data.close >= indicator_data.ema40 >= indicator_data.ema5 >= indicator_data.ema20 %}
+                                종가 > EMA40 > EMA5 > EMA20
+                            {% elif indicator_data.close >= indicator_data.ema40 >= indicator_data.ema20 >= indicator_data.ema5 %}
+                                종가 > EMA40 > EMA20 > EMA5
+                            {% else %}
+                                종가: {{ indicator_data.close }}, EMA5: {{ indicator_data.ema5 }}, EMA20: {{ indicator_data.ema20 }}, EMA40: {{ indicator_data.ema40 }}
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if indicator_data.close > indicator_data.ema5 and indicator_data.ema5 > indicator_data.ema20 and indicator_data.ema20 > indicator_data.ema40 %}
+                                <span class="positive">강세 정렬</span>
+                            {% elif indicator_data.close < indicator_data.ema5 and indicator_data.ema5 < indicator_data.ema20 and indicator_data.ema20 < indicator_data.ema40 %}
+                                <span class="negative">약세 정렬</span>
+                            {% else %}
+                                <span class="neutral">혼조 정렬</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endif %}
+                    
+                    <!-- MACD 지표 -->
+                    {% if indicator_data.macd %}
+                    <tr>
+                        <td><strong>MACD</strong></td>
+                        <td class="value">{{ indicator_data.macd }}</td>
+                        <td>MACD 라인</td>
+                    </tr>
+                    {% endif %}
+                    {% if indicator_data.macd_signal %}
+                    <tr>
+                        <td><strong>MACD Signal</strong></td>
+                        <td class="value">{{ indicator_data.macd_signal }}</td>
+                        <td>신호선</td>
+                    </tr>
+                    {% endif %}
+                    {% if indicator_data.macd_histogram %}
+                    <tr>
+                        <td><strong>MACD Histogram</strong></td>
+                        <td class="value {% if indicator_data.macd_histogram > 0 %}positive{% elif indicator_data.macd_histogram < 0 %}negative{% endif %}">
+                            {{ indicator_data.macd_histogram }}
+                        </td>
+                        <td>히스토그램</td>
+                    </tr>
+                    {% endif %}
+                    
+                    <!-- RSI 지표 -->
+                    {% if indicator_data.rsi %}
+                    <tr>
+                        <td><strong>RSI</strong></td>
+                        <td class="value {% if indicator_data.rsi > 70 %}negative{% elif indicator_data.rsi < 30 %}positive{% endif %}">
+                            {{ indicator_data.rsi }}
+                        </td>
+                        <td>
+                            {% if indicator_data.rsi > 70 %}과매수{% elif indicator_data.rsi < 30 %}과매도{% else %}중립{% endif %}
+                        </td>
+                    </tr>
+                    {% endif %}
+                    
+                    <!-- 스토캐스틱 지표 -->
+                    {% if indicator_data.stoch_k %}
+                    <tr>
+                        <td><strong>Stochastic %K</strong></td>
+                        <td class="value {% if indicator_data.stoch_k > 80 %}negative{% elif indicator_data.stoch_k < 20 %}positive{% endif %}">
+                            {{ indicator_data.stoch_k }}
+                        </td>
+                        <td>
+                            {% if indicator_data.stoch_k > 80 %}과매수{% elif indicator_data.stoch_k < 20 %}과매도{% else %}중립{% endif %}
+                        </td>
+                    </tr>
+                    {% endif %}
+                    {% if indicator_data.stoch_d %}
+                    <tr>
+                        <td><strong>Stochastic %D</strong></td>
+                        <td class="value {% if indicator_data.stoch_d > 80 %}negative{% elif indicator_data.stoch_d < 20 %}positive{% endif %}">
+                            {{ indicator_data.stoch_d }}
+                        </td>
+                        <td>
+                            {% if indicator_data.stoch_d > 80 %}과매수{% elif indicator_data.stoch_d < 20 %}과매도{% else %}중립{% endif %}
+                        </td>
+                    </tr>
+                    {% endif %}
+                    
+                    <!-- 거래량 비율 -->
+                    {% if indicator_data.volume_ratio_5d %}
+                    <tr>
+                        <td><strong>5일 평균 거래량 대비</strong></td>
+                        <td class="value {% if indicator_data.volume_ratio_5d > 150 %}positive{% elif indicator_data.volume_ratio_5d < 50 %}negative{% endif %}">
+                            {{ indicator_data.volume_ratio_5d }}%
+                        </td>
+                        <td>
+                            {% if indicator_data.volume_ratio_5d > 150 %}거래량 증가{% elif indicator_data.volume_ratio_5d < 50 %}거래량 감소{% else %}평균 수준{% endif %}
+                        </td>
+                    </tr>
+                    {% endif %}
+                    {% if indicator_data.volume_ratio_20d %}
+                    <tr>
+                        <td><strong>20일 평균 거래량 대비</strong></td>
+                        <td class="value {% if indicator_data.volume_ratio_20d > 150 %}positive{% elif indicator_data.volume_ratio_20d < 50 %}negative{% endif %}">
+                            {{ indicator_data.volume_ratio_20d }}%
+                        </td>
+                        <td>
+                            {% if indicator_data.volume_ratio_20d > 150 %}거래량 증가{% elif indicator_data.volume_ratio_20d < 50 %}거래량 감소{% else %}평균 수준{% endif %}
+                        </td>
+                    </tr>
+                    {% endif %}
+                    {% if indicator_data.volume_ratio_40d %}
+                    <tr>
+                        <td><strong>40일 평균 거래량 대비</strong></td>
+                        <td class="value {% if indicator_data.volume_ratio_40d > 150 %}positive{% elif indicator_data.volume_ratio_40d < 50 %}negative{% endif %}">
+                            {{ indicator_data.volume_ratio_40d }}%
+                        </td>
+                        <td>
+                            {% if indicator_data.volume_ratio_40d > 150 %}거래량 증가{% elif indicator_data.volume_ratio_40d < 50 %}거래량 감소{% else %}평균 수준{% endif %}
+                        </td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+        
+        <!-- 크로스오버 정보 -->
+        {% if crossover_data %}
+        <h4>🔄 최근 크로스오버 (30일 이내)</h4>
+        <div class="crossover-info">
+            {% if crossover_data.daily_macd %}
+            <div class="crossover-item">
+                <strong>일봉 MACD:</strong> 
+                <span class="{% if crossover_data.daily_macd.type == 'Golden Cross' %}positive{% else %}negative{% endif %}">
+                    {{ crossover_data.daily_macd.type }}
+                </span>
+                ({{ crossover_data.daily_macd.date }})
+            </div>
+            {% endif %}
+            
+            {% if crossover_data.daily_ema %}
+            <div class="crossover-item">
+                <strong>일봉 EMA:</strong> 
+                <span class="{% if crossover_data.daily_ema.type == 'Golden Cross' %}positive{% else %}negative{% endif %}">
+                    {{ crossover_data.daily_ema.type }}
+                </span>
+                ({{ crossover_data.daily_ema.date }})
+            </div>
+            {% endif %}
+            
+            {% if crossover_data.weekly_macd %}
+            <div class="crossover-item">
+                <strong>주봉 MACD:</strong> 
+                <span class="{% if crossover_data.weekly_macd.type == 'Golden Cross' %}positive{% else %}negative{% endif %}">
+                    {{ crossover_data.weekly_macd.type }}
+                </span>
+                ({{ crossover_data.weekly_macd.date }})
+            </div>
+            {% endif %}
+            
+            {% if crossover_data.weekly_ema %}
+            <div class="crossover-item">
+                <strong>주봉 EMA:</strong> 
+                <span class="{% if crossover_data.weekly_ema.type == 'Golden Cross' %}positive{% else %}negative{% endif %}">
+                    {{ crossover_data.weekly_ema.type }}
+                </span>
+                ({{ crossover_data.weekly_ema.date }})
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
 
     <a href="/" class="back-link">← Back to Home</a>
 

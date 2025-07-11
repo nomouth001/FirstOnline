@@ -347,40 +347,118 @@ class IndicatorService:
             return None
     
     def _detect_ema_crossover(self, ema5_data, ema20_data, ema40_data):
-        """EMA 크로스오버 감지"""
+        """EMA 크로스오버 감지 (대순환 분석 적용)"""
         try:
             # 공통 인덱스 찾기
             common_index = ema5_data.index.intersection(ema20_data.index).intersection(ema40_data.index)
-            if len(common_index) < 2:
+            if len(common_index) < 10:  # 최소 10개 데이터 필요
                 return None
             
-            # EMA5 > EMA20 크로스 찾기
-            ema5_above_20 = ema5_data.loc[common_index, 'EMA'] > ema20_data.loc[common_index, 'EMA']
-            crossover_points = ema5_above_20 != ema5_above_20.shift(1)
+            # 최근 데이터만 사용
+            recent_index = common_index[-10:]
             
-            if crossover_points.any():
-                last_cross_date = crossover_points[crossover_points].index[-1]
+            # EMA 데이터 정리
+            ema5_values = ema5_data.loc[recent_index, 'EMA']
+            ema20_values = ema20_data.loc[recent_index, 'EMA']
+            ema40_values = ema40_data.loc[recent_index, 'EMA']
+            
+            # 각 날짜의 EMA 상태 분석
+            crossover_events = []
+            
+            for i in range(1, len(recent_index)):
+                prev_date = recent_index[i-1]
+                curr_date = recent_index[i]
                 
-                # 현재 EMA 배열 확인
-                current_ema5 = ema5_data.loc[last_cross_date, 'EMA']
-                current_ema20 = ema20_data.loc[last_cross_date, 'EMA']
-                current_ema40 = ema40_data.loc[last_cross_date, 'EMA']
+                # 이전 상태
+                prev_ema5 = ema5_values.iloc[i-1]
+                prev_ema20 = ema20_values.iloc[i-1]
+                prev_ema40 = ema40_values.iloc[i-1]
                 
-                # 골든크로스 판단: EMA5 > EMA20 > EMA40
-                is_golden = current_ema5 > current_ema20 > current_ema40
+                # 현재 상태
+                curr_ema5 = ema5_values.iloc[i]
+                curr_ema20 = ema20_values.iloc[i]
+                curr_ema40 = ema40_values.iloc[i]
                 
-                return {
-                    'date': last_cross_date,
-                    'type': 'Golden Cross' if is_golden else 'Dead Cross',
-                    'ema5': current_ema5,
-                    'ema20': current_ema20,
-                    'ema40': current_ema40
-                }
+                # 이전 상태와 현재 상태 분류
+                prev_state = self._classify_ema_state(prev_ema5, prev_ema20, prev_ema40)
+                curr_state = self._classify_ema_state(curr_ema5, curr_ema20, curr_ema40)
+                
+                # 크로스오버 감지
+                crossover_type = self._detect_crossover_type(prev_state, curr_state, prev_ema5, prev_ema20, prev_ema40, curr_ema5, curr_ema20, curr_ema40)
+                
+                if crossover_type:
+                    crossover_events.append({
+                        'date': curr_date,
+                        'type': crossover_type,
+                        'ema5': curr_ema5,
+                        'ema20': curr_ema20,
+                        'ema40': curr_ema40,
+                        'prev_state': prev_state,
+                        'curr_state': curr_state
+                    })
+            
+            # 가장 최근 크로스오버 반환
+            if crossover_events:
+                return crossover_events[-1]
+            
             return None
             
         except Exception as e:
             logging.error(f"Error detecting EMA crossover: {str(e)}")
             return None
+    
+    def _classify_ema_state(self, ema5, ema20, ema40):
+        """EMA 상태 분류 (대순환 분석 기준)"""
+        if ema5 > ema20 > ema40:
+            return "안정_상승기"
+        elif ema20 > ema5 > ema40:
+            return "하락_변화기1"
+        elif ema20 > ema40 > ema5:
+            return "하락_변화기2"
+        elif ema40 > ema20 > ema5:
+            return "안정_하락기"
+        elif ema40 > ema5 > ema20:
+            return "상승_변화기1"
+        elif ema5 > ema40 > ema20:
+            return "상승_변화기2"
+        else:
+            return "혼조"
+    
+    def _detect_crossover_type(self, prev_state, curr_state, prev_ema5, prev_ema20, prev_ema40, curr_ema5, curr_ema20, curr_ema40):
+        """크로스오버 타입 감지"""
+        # 골드크로스 감지
+        if prev_state == "안정_하락기" and curr_state == "상승_변화기1":
+            # EMA5가 EMA20을 상향돌파 (골드크로스1)
+            if prev_ema5 <= prev_ema20 and curr_ema5 > curr_ema20:
+                return "Golden Cross 1"
+        
+        elif prev_state == "상승_변화기1" and curr_state == "상승_변화기2":
+            # EMA5가 EMA40을 상향돌파 (골드크로스2)
+            if prev_ema5 <= prev_ema40 and curr_ema5 > curr_ema40:
+                return "Golden Cross 2"
+        
+        elif prev_state == "상승_변화기2" and curr_state == "안정_상승기":
+            # EMA20이 EMA40을 상향돌파 (골드크로스3)
+            if prev_ema20 <= prev_ema40 and curr_ema20 > curr_ema40:
+                return "Golden Cross 3"
+        
+        # 데드크로스 감지
+        elif prev_state == "안정_상승기" and curr_state == "하락_변화기1":
+            # EMA5가 EMA20을 하향돌파 (데드크로스1)
+            if prev_ema5 >= prev_ema20 and curr_ema5 < curr_ema20:
+                return "Dead Cross 1"
+        
+        elif prev_state == "하락_변화기1" and curr_state == "하락_변화기2":
+            # EMA5가 EMA40을 하향돌파 (데드크로스2)
+            if prev_ema5 >= prev_ema40 and curr_ema5 < curr_ema40:
+                return "Dead Cross 2"
+        
+        elif prev_state == "하락_변화기2" and curr_state == "안정_하락기":
+            # EMA20이 EMA40을 하향돌파 (데드크로스3)
+            if prev_ema20 >= prev_ema40 and curr_ema20 < curr_ema40:
+                return "Dead Cross 3"
+        
+        return None
     
     def process_all_indicators(self, ticker, daily_data, timestamp=None):
         """모든 지표를 계산하고 저장하는 통합 함수"""

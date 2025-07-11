@@ -56,6 +56,20 @@ def normalize_alpha_vantage_data(data_json, ticker):
         return pd.DataFrame()
 
 
+def convert_ticker_for_alpha_vantage(ticker):
+    """
+    Alpha Vantage용 심볼 변환
+    한국 주식: 007310.KS → 007310.KRX 또는 007310.SEO
+    """
+    if ticker.endswith('.KS') or ticker.endswith('.KQ'):
+        # 한국 주식의 경우 Alpha Vantage는 제한적 지원
+        # KRX (Korea Exchange) 형식 시도
+        base_symbol = ticker.split('.')[0]
+        return f"{base_symbol}.KRX"
+    
+    # 기타 주식은 그대로 반환
+    return ticker
+
 def download_from_alpha_vantage(ticker, max_retries=3):
     """
     Alpha Vantage API에서 데이터 다운로드
@@ -67,6 +81,15 @@ def download_from_alpha_vantage(ticker, max_retries=3):
         logging.error(f"[{ticker}] Alpha Vantage API key not configured")
         return pd.DataFrame()
     
+    # 한국 주식 지원 제한적이므로 조기 반환
+    if ticker.endswith('.KS') or ticker.endswith('.KQ'):
+        logging.warning(f"[{ticker}] Alpha Vantage has limited support for Korean stocks")
+        return pd.DataFrame()
+    
+    # 심볼 변환
+    alpha_ticker = convert_ticker_for_alpha_vantage(ticker)
+    logging.info(f"[{ticker}] Converting to Alpha Vantage format: {alpha_ticker}")
+    
     for attempt in range(max_retries):
         try:
             logging.info(f"[{ticker}] Downloading from Alpha Vantage (attempt {attempt + 1}/{max_retries})...")
@@ -74,7 +97,7 @@ def download_from_alpha_vantage(ticker, max_retries=3):
             # API 요청 파라미터
             params = {
                 'function': 'TIME_SERIES_DAILY',
-                'symbol': ticker,
+                'symbol': alpha_ticker,
                 'outputsize': 'full',  # 최대 20년 데이터
                 'apikey': api_key
             }
@@ -111,17 +134,21 @@ def download_from_alpha_vantage(ticker, max_retries=3):
     return pd.DataFrame()
 
 
+class RateLimitError(Exception):
+    """429 Rate Limit 에러를 나타내는 사용자 정의 예외"""
+    pass
+
 def download_from_yahoo_finance(ticker, start_date, end_date, max_retries=3, delay=2):
     """
-    Yahoo Finance에서 데이터 다운로드 (개선된 retry 로직 포함)
+    Yahoo Finance에서 데이터 다운로드 (429 에러 시 즉시 폴백)
     """
     for attempt in range(max_retries):
         try:
             logging.info(f"[{ticker}] Downloading chart data (attempt {attempt + 1}/{max_retries})...")
             
-            # 첫 번째 시도가 아니면 더 긴 지연 시간 적용
+            # 첫 번째 시도가 아니면 지연 시간 적용 (429 에러가 아닌 경우만)
             if attempt > 0:
-                wait_time = delay * (5 ** attempt)  # 10, 50초로 지연 시간 대폭 증가
+                wait_time = delay * (2 ** attempt)  # 일반 오류 시 지수 백오프 (4, 8초)
                 logging.info(f"[{ticker}] Waiting {wait_time} seconds before retry...")
                 time.sleep(wait_time)
             
@@ -139,16 +166,12 @@ def download_from_yahoo_finance(ticker, start_date, end_date, max_retries=3, del
             error_msg = str(e).lower()
             logging.warning(f"[{ticker}] Chart data download attempt {attempt + 1} failed: {str(e)}")
             
-            # 429 오류나 rate limit 관련 오류인 경우 더 긴 대기
+            # 429 오류나 rate limit 관련 오류인 경우 즉시 Alpha Vantage로 폴백
             if '429' in error_msg or 'rate' in error_msg or 'too many' in error_msg:
-                if attempt < max_retries - 1:
-                    wait_time = delay * (5 ** attempt)  # 429 오류 시 더 긴 대기 (2, 10, 50초)
-                    logging.info(f"[{ticker}] Rate limit detected, waiting {wait_time} seconds before retry...")
-                    time.sleep(wait_time)
-                else:
-                    logging.error(f"[{ticker}] Rate limit exceeded, all attempts failed")
-                    raise e
+                logging.warning(f"[{ticker}] Rate limit detected (429), switching to Alpha Vantage immediately")
+                raise RateLimitError(f"Yahoo Finance rate limit exceeded: {str(e)}")
             else:
+                # 다른 에러의 경우 기존 시퀀스 유지
                 if attempt < max_retries - 1:
                     wait_time = delay * (2 ** attempt)  # 일반 오류 시 지수 백오프
                     logging.info(f"[{ticker}] Waiting {wait_time} seconds before retry...")
@@ -171,7 +194,11 @@ def download_stock_data_with_fallback(ticker, start_date, end_date):
         if not df.empty:
             logging.info(f"[{ticker}] Yahoo Finance successful")
             return df
+    except RateLimitError as e:
+        # 429 에러 시 즉시 Alpha Vantage로 전환
+        logging.warning(f"[{ticker}] Yahoo Finance rate limit detected, switching to Alpha Vantage immediately: {e}")
     except Exception as e:
+        # 다른 에러의 경우 일반적인 폴백
         logging.warning(f"[{ticker}] Yahoo Finance failed: {e}")
     
     # 2. Alpha Vantage 폴백

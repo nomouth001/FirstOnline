@@ -105,6 +105,11 @@ YAHOO_FINANCE_CONFIG = {
 
 # 대안 API 설정 (향후 사용을 위한 준비)
 ALTERNATIVE_APIS = {
+    'TWELVE_DATA': {
+        'API_KEY': os.getenv('TWELVE_DATA_API_KEY', ''),
+        'BASE_URL': 'https://api.twelvedata.com/time_series',
+        'DAILY_LIMIT': 800,
+    },
     'ALPHA_VANTAGE': {
         'API_KEY': os.getenv('ALPHA_VANTAGE_API_KEY', ''),
         'BASE_URL': 'https://www.alphavantage.co/query',

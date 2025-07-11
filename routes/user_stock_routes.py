@@ -359,6 +359,7 @@ def search_stocks():
     try:
         import yfinance as yf
         import time
+        import re
         
         # 일반적인 종목 코드들로 검색
         common_tickers = [
@@ -367,77 +368,102 @@ def search_stocks():
         ]
         
         results = []
+        added_tickers = set()  # 중복 방지
         
-        # 입력된 쿼리와 일치하는 종목들 검색
-        for ticker in common_tickers:
-            if query.upper() in ticker.upper():
-                try:
-                    # retry 로직 적용
-                    for attempt in range(2):  # 검색은 2번만 시도
-                        try:
-                            # yfinance가 자체 세션을 사용하도록 세션 파라미터 제거
-                            ticker_obj = yf.Ticker(ticker)
-                            stock_info = ticker_obj.info
-                            name = stock_info.get("longName") or stock_info.get("shortName")
-                            
-                            if name:
+        def try_ticker(ticker):
+            """단일 종목 정보 조회"""
+            try:
+                for attempt in range(2):  # 검색은 2번만 시도
+                    try:
+                        ticker_obj = yf.Ticker(ticker)
+                        stock_info = ticker_obj.info
+                        name = stock_info.get("longName") or stock_info.get("shortName")
+                        
+                        if name and ticker not in added_tickers:
+                            results.append({
+                                "ticker": ticker,
+                                "name": name,
+                                "sector": stock_info.get("sector", ""),
+                                "country": stock_info.get("country", "")
+                            })
+                            added_tickers.add(ticker)
+                            return True
+                        elif attempt < 1:
+                            time.sleep(1)
+                            continue
+                        else:
+                            # 기본 정보만 제공
+                            if ticker not in added_tickers:
                                 results.append({
                                     "ticker": ticker,
-                                    "name": name,
-                                    "sector": stock_info.get("sector", ""),
-                                    "country": stock_info.get("country", "")
+                                    "name": ticker,
+                                    "sector": "",
+                                    "country": ""
                                 })
-                                break
+                                added_tickers.add(ticker)
+                                return True
+                            return False
+                            
+                    except Exception as e:
+                        error_msg = str(e).lower()
+                        if '429' in error_msg or 'rate' in error_msg or 'too many' in error_msg:
+                            if attempt < 1:
+                                time.sleep(2)
+                                continue
                             else:
-                                if attempt < 1:
-                                    time.sleep(1)
-                                    continue
-                                else:
-                                    # 기본 정보만 제공
+                                # 기본 정보만 제공
+                                if ticker not in added_tickers:
                                     results.append({
                                         "ticker": ticker,
                                         "name": ticker,
                                         "sector": "",
                                         "country": ""
                                     })
-                                    break
-                                    
-                        except Exception as e:
-                            error_msg = str(e).lower()
-                            if '429' in error_msg or 'rate' in error_msg or 'too many' in error_msg:
-                                if attempt < 1:
-                                    time.sleep(2)
-                                    continue
-                                else:
-                                    # 기본 정보만 제공
-                                    results.append({
-                                        "ticker": ticker,
-                                        "name": ticker,
-                                        "sector": "",
-                                        "country": ""
-                                    })
-                                    break
+                                    added_tickers.add(ticker)
+                                    return True
+                                return False
+                        else:
+                            if attempt < 1:
+                                time.sleep(1)
+                                continue
                             else:
-                                if attempt < 1:
-                                    time.sleep(1)
-                                    continue
-                                else:
-                                    # 기본 정보만 제공
+                                # 기본 정보만 제공
+                                if ticker not in added_tickers:
                                     results.append({
                                         "ticker": ticker,
                                         "name": ticker,
                                         "sector": "",
                                         "country": ""
                                     })
-                                    break
-                except:
-                    # 기본 정보만 제공
+                                    added_tickers.add(ticker)
+                                    return True
+                                return False
+            except:
+                # 기본 정보만 제공
+                if ticker not in added_tickers:
                     results.append({
                         "ticker": ticker,
                         "name": ticker,
                         "sector": "",
                         "country": ""
                     })
+                    added_tickers.add(ticker)
+                    return True
+                return False
+        
+        # 6자리 숫자 패턴 체크 (한국 종목 코드)
+        if re.match(r'^\d{6}$', query):
+            # 6자리 숫자면 .KS와 .KQ 둘 다 시도
+            for suffix in ['.KS', '.KQ']:
+                test_ticker = query + suffix
+                if try_ticker(test_ticker):
+                    # 하나라도 찾으면 성공
+                    pass
+        
+        # 기존 common_tickers 검색
+        for ticker in common_tickers:
+            if query.upper() in ticker.upper():
+                try_ticker(ticker)
         
         # 결과 수 제한
         return jsonify(results[:10])

@@ -302,21 +302,16 @@
                     <tr>
                         <td><strong>EMA 배열</strong></td>
                         <td class="value">
-                            {% if indicator_data.close >= indicator_data.ema5 >= indicator_data.ema20 >= indicator_data.ema40 %}
-                                종가 > EMA5 > EMA20 > EMA40
-                            {% elif indicator_data.close >= indicator_data.ema5 >= indicator_data.ema40 >= indicator_data.ema20 %}
-                                종가 > EMA5 > EMA40 > EMA20
-                            {% elif indicator_data.close >= indicator_data.ema20 >= indicator_data.ema5 >= indicator_data.ema40 %}
-                                종가 > EMA20 > EMA5 > EMA40
-                            {% elif indicator_data.close >= indicator_data.ema20 >= indicator_data.ema40 >= indicator_data.ema5 %}
-                                종가 > EMA20 > EMA40 > EMA5
-                            {% elif indicator_data.close >= indicator_data.ema40 >= indicator_data.ema5 >= indicator_data.ema20 %}
-                                종가 > EMA40 > EMA5 > EMA20
-                            {% elif indicator_data.close >= indicator_data.ema40 >= indicator_data.ema20 >= indicator_data.ema5 %}
-                                종가 > EMA40 > EMA20 > EMA5
-                            {% else %}
-                                혼재
-                            {% endif %}
+                            {% set ema_values = [
+                                {'name': '종가', 'value': indicator_data.close},
+                                {'name': 'EMA5', 'value': indicator_data.ema5},
+                                {'name': 'EMA20', 'value': indicator_data.ema20},
+                                {'name': 'EMA40', 'value': indicator_data.ema40}
+                            ] %}
+                            {% set sorted_emas = ema_values|sort(attribute='value', reverse=true) %}
+                            {% for ema in sorted_emas %}
+                                {{ ema.name }}{% if not loop.last %} > {% endif %}
+                            {% endfor %}
                         </td>
                         <td>
                             {% if indicator_data.close >= indicator_data.ema5 >= indicator_data.ema20 >= indicator_data.ema40 %}

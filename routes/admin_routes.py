@@ -1,9 +1,12 @@
 import logging
-from flask import Blueprint, render_template, redirect, url_for, flash, request, jsonify
+from flask import Blueprint, render_template, redirect, url_for, flash, request, jsonify, Response
 from flask_login import login_required, current_user
 from models import db, User, StockList, AnalysisHistory, Stock
 from functools import wraps
 from services.analysis_service import start_bulk_analysis_task
+from utils.log_utils import LogStreamer, get_available_log_files, get_log_file_info
+from utils.memory_monitor import get_memory_status_for_admin
+from utils.batch_recovery import get_all_batch_status, check_and_recover_batches
 
 admin_bp = Blueprint('admin', __name__)
 logger = logging.getLogger(__name__)
@@ -606,3 +609,112 @@ def api_get_analysis_status(ticker):
             'ticker': ticker,
             'status': 'error'
         }), 500 
+
+@admin_bp.route('/logs')
+@login_required
+@admin_required
+def admin_logs():
+    """로그 관리 페이지"""
+    log_files = get_available_log_files()
+    return render_template('admin/logs.html', log_files=log_files)
+
+@admin_bp.route('/logs/stream')
+@login_required
+@admin_required
+def stream_logs():
+    """실시간 로그 스트리밍 (SSE)"""
+    log_file = request.args.get('file', 'TL_Log_to_review.txt')  # 대문자 L로 수정
+    
+    def generate():
+        try:
+            streamer = LogStreamer(log_file)
+            
+            # 최근 로그 먼저 전송
+            recent_logs = streamer.get_recent_logs(100)
+            for log_line in recent_logs:
+                yield f"data: {log_line}\n\n"
+            
+            # 실시간 로그 follow
+            for log_line in streamer.follow_log_file():
+                yield f"data: {log_line}\n\n"
+                
+        except Exception as e:
+            yield f"data: 오류: {str(e)}\n\n"
+    
+    return Response(generate(), mimetype='text/event-stream')
+
+@admin_bp.route('/api/logs/files')
+@login_required
+@admin_required
+def api_log_files():
+    """사용 가능한 로그 파일 목록 API"""
+    log_files = get_available_log_files()
+    return jsonify(log_files)
+
+@admin_bp.route('/api/logs/info')
+@login_required
+@admin_required
+def api_log_info():
+    """로그 파일 정보 API"""
+    file_path = request.args.get('file')
+    if not file_path:
+        return jsonify({'error': '파일 경로가 필요합니다.'}), 400
+    
+    info = get_log_file_info(file_path)
+    if not info:
+        return jsonify({'error': '파일을 찾을 수 없습니다.'}), 404
+    
+    return jsonify(info)
+
+@admin_bp.route('/api/memory/status')
+@login_required
+@admin_required
+def api_memory_status():
+    """메모리 상태 API"""
+    try:
+        memory_status = get_memory_status_for_admin()
+        return jsonify(memory_status)
+    except Exception as e:
+        logger.error(f"메모리 상태 조회 실패: {e}")
+        return jsonify({'error': '메모리 상태 조회에 실패했습니다.'}), 500
+
+@admin_bp.route('/api/batch/status')
+@login_required
+@admin_required
+def api_batch_status():
+    """배치 상태 조회 API"""
+    try:
+        batch_status = get_all_batch_status()
+        return jsonify({
+            'success': True,
+            'batches': batch_status,
+            'total_running': len(batch_status)
+        })
+    except Exception as e:
+        logger.error(f"배치 상태 조회 실패: {e}")
+        return jsonify({'error': '배치 상태 조회에 실패했습니다.'}), 500
+
+@admin_bp.route('/api/batch/recover', methods=['POST'])
+@login_required
+@admin_required
+def api_batch_recover():
+    """배치 복구 시도 API"""
+    try:
+        recovery_tasks = check_and_recover_batches()
+        
+        if recovery_tasks:
+            return jsonify({
+                'success': True,
+                'message': f'{len(recovery_tasks)}개의 배치 복구 작업이 생성되었습니다.',
+                'recovery_tasks': recovery_tasks
+            })
+        else:
+            return jsonify({
+                'success': True,
+                'message': '복구 가능한 배치가 없습니다.',
+                'recovery_tasks': []
+            })
+            
+    except Exception as e:
+        logger.error(f"배치 복구 실패: {e}")
+        return jsonify({'error': '배치 복구에 실패했습니다.'}), 500

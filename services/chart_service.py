@@ -173,216 +173,320 @@ def generate_chart(ticker):
         raise e
 
 def generate(df_input, freq_label, suffix, ticker):
-    num_bars_to_show = 60
-    min_data_for_full_calc = 60
-    if freq_label == "Monthly":
-        num_bars_to_show = 26
-        min_data_for_full_calc = 40
-    if len(df_input) < min_data_for_full_calc:
-        logging.warning(f"Not enough data for accurate full indicator calculation for {freq_label} chart for {ticker}. Need at least {min_data_for_full_calc} periods, got {len(df_input)}. Only {num_bars_to_show} bars will be shown if possible.")
-        if len(df_input) < num_bars_to_show:
-            logging.warning(f"Insufficient data to plot {num_bars_to_show} bars for {freq_label} chart for {ticker}. Skipping chart generation.")
-            return None
-    df_calc = df_input.copy()
-    df_calc["EMA5"] = ta.trend.ema_indicator(df_calc["Close"], window=5)
-    df_calc["EMA20"] = ta.trend.ema_indicator(df_calc["Close"], window=20)
-    df_calc["EMA40"] = ta.trend.ema_indicator(df_calc["Close"], window=40)
-    ichimoku = IchimokuIndicator(high=df_calc["High"], low=df_calc["Low"])
-    df_calc["Ichimoku_Conversion"] = ichimoku.ichimoku_conversion_line()
-    df_calc["Ichimoku_Base"] = ichimoku.ichimoku_base_line()
-    df_calc["Ichimoku_SpanA"] = ichimoku.ichimoku_a()
-    df_calc["Ichimoku_SpanB"] = ichimoku.ichimoku_b()
-    df_calc["Ichimoku_Lagging"] = df_calc["Close"].shift(-26)
-    df_calc['MACD_TA'] = ta.trend.macd(df_calc['Close'])
-    df_calc['MACD_Signal_TA'] = ta.trend.macd_signal(df_calc['Close'])
-    df_calc['MACD_Hist_TA'] = ta.trend.macd_diff(df_calc['Close'])
-    bollinger = BollingerBands(close=df_calc["Close"], window=20, window_dev=2)
-    df_calc["BB_Upper"] = bollinger.bollinger_hband()
-    df_calc["BB_Lower"] = bollinger.bollinger_lband()
-    df_calc["BB_MA"] = bollinger.bollinger_mavg()
-    df_calc.dropna(subset=['EMA40', 'MACD_Hist_TA', 'BB_Upper', 'BB_Lower', 'BB_MA'], inplace=True)
-    if df_calc.empty:
-        logging.warning(f"DataFrame for calculations became empty after dropping NaNs for {freq_label} chart for {ticker}.")
-        return None
-    df_plot = df_calc[-num_bars_to_show:].copy()
-    if df_plot.empty:
-        logging.warning(f"DataFrame for plotting became empty for {freq_label} chart for {ticker}.")
-        return None
-    current_date_str = datetime.now().strftime("%Y%m%d")
-    chart_creation_date = datetime.now()
-    # 디버그 데이터 수집 (차트에 실제로 그려지는 데이터만)
-    daily_ema_data = []
-    daily_macd_data = []
-    daily_bb_data = []
-    daily_ichimoku_data = []
-    weekly_ema_data = []
-    weekly_macd_data = []
-    weekly_bb_data = []
-    weekly_ichimoku_data = []
-    monthly_ema_data = []
-    monthly_macd_data = []
-    monthly_bb_data = []
-    monthly_ichimoku_data = []
-    for idx in df_plot.index:
-        date_str = idx.strftime('%Y-%m-%d')
-        ema_data = f"{date_str}, EMA5: {df_plot.loc[idx, 'EMA5']:.4f}, EMA20: {df_plot.loc[idx, 'EMA20']:.4f}, EMA40: {df_plot.loc[idx, 'EMA40']:.4f}"
-        macd_data = f"{date_str}, MACD: {df_plot.loc[idx, 'MACD_TA']:.4f}, Signal: {df_plot.loc[idx, 'MACD_Signal_TA']:.4f}, Hist: {df_plot.loc[idx, 'MACD_Hist_TA']:.4f}"
-        bb_data = f"{date_str}, BB_Upper: {df_plot.loc[idx, 'BB_Upper']:.4f}, BB_Lower: {df_plot.loc[idx, 'BB_Lower']:.4f}, BB_MA: {df_plot.loc[idx, 'BB_MA']:.4f}"
+    """차트 생성 함수"""
+    try:
+        # 최소 데이터 요구사항 확인
+        num_bars_to_show = 45
         if freq_label == "Daily":
-            daily_ema_data.append(ema_data)
-            daily_macd_data.append(macd_data)
-            daily_bb_data.append(bb_data)
-            ichimoku_conv = df_plot.loc[idx, 'Ichimoku_Conversion'] if pd.notna(df_plot.loc[idx, 'Ichimoku_Conversion']) else 'NaN'
-            ichimoku_base = df_plot.loc[idx, 'Ichimoku_Base'] if pd.notna(df_plot.loc[idx, 'Ichimoku_Base']) else 'NaN'
-            ichimoku_spana = df_plot.loc[idx, 'Ichimoku_SpanA'] if pd.notna(df_plot.loc[idx, 'Ichimoku_SpanA']) else 'NaN'
-            ichimoku_spanb = df_plot.loc[idx, 'Ichimoku_SpanB'] if pd.notna(df_plot.loc[idx, 'Ichimoku_SpanB']) else 'NaN'
-            ichimoku_lag = df_plot.loc[idx, 'Ichimoku_Lagging'] if pd.notna(df_plot.loc[idx, 'Ichimoku_Lagging']) else 'NaN'
-            daily_ichimoku_data.append(f"{date_str}, Ichimoku_Conversion: {ichimoku_conv}, Ichimoku_Base: {ichimoku_base}, Ichimoku_SpanA: {ichimoku_spana}, Ichimoku_SpanB: {ichimoku_spanb}, Ichimoku_Lagging: {ichimoku_lag}")
+            min_data_for_full_calc = 40
         elif freq_label == "Weekly":
-            weekly_ema_data.append(ema_data)
-            weekly_macd_data.append(macd_data)
-            weekly_bb_data.append(bb_data)
-            ichimoku_conv = df_plot.loc[idx, 'Ichimoku_Conversion'] if pd.notna(df_plot.loc[idx, 'Ichimoku_Conversion']) else 'NaN'
-            ichimoku_base = df_plot.loc[idx, 'Ichimoku_Base'] if pd.notna(df_plot.loc[idx, 'Ichimoku_Base']) else 'NaN'
-            ichimoku_spana = df_plot.loc[idx, 'Ichimoku_SpanA'] if pd.notna(df_plot.loc[idx, 'Ichimoku_SpanA']) else 'NaN'
-            ichimoku_spanb = df_plot.loc[idx, 'Ichimoku_SpanB'] if pd.notna(df_plot.loc[idx, 'Ichimoku_SpanB']) else 'NaN'
-            ichimoku_lag = df_plot.loc[idx, 'Ichimoku_Lagging'] if pd.notna(df_plot.loc[idx, 'Ichimoku_Lagging']) else 'NaN'
-            weekly_ichimoku_data.append(f"{date_str}, Ichimoku_Conversion: {ichimoku_conv}, Ichimoku_Base: {ichimoku_base}, Ichimoku_SpanA: {ichimoku_spana}, Ichimoku_SpanB: {ichimoku_spanb}, Ichimoku_Lagging: {ichimoku_lag}")
-        elif freq_label == "Monthly":
-            monthly_ema_data.append(ema_data)
-            monthly_macd_data.append(macd_data)
-            monthly_bb_data.append(bb_data)
-            ichimoku_conv = df_plot.loc[idx, 'Ichimoku_Conversion'] if pd.notna(df_plot.loc[idx, 'Ichimoku_Conversion']) else 'NaN'
-            ichimoku_base = df_plot.loc[idx, 'Ichimoku_Base'] if pd.notna(df_plot.loc[idx, 'Ichimoku_Base']) else 'NaN'
-            ichimoku_spana = df_plot.loc[idx, 'Ichimoku_SpanA'] if pd.notna(df_plot.loc[idx, 'Ichimoku_SpanA']) else 'NaN'
-            ichimoku_spanb = df_plot.loc[idx, 'Ichimoku_SpanB'] if pd.notna(df_plot.loc[idx, 'Ichimoku_SpanB']) else 'NaN'
-            ichimoku_lag = df_plot.loc[idx, 'Ichimoku_Lagging'] if pd.notna(df_plot.loc[idx, 'Ichimoku_Lagging']) else 'NaN'
-            monthly_ichimoku_data.append(f"{date_str}, Ichimoku_Conversion: {ichimoku_conv}, Ichimoku_Base: {ichimoku_base}, Ichimoku_SpanA: {ichimoku_spana}, Ichimoku_SpanB: {ichimoku_spanb}, Ichimoku_Lagging: {ichimoku_lag}")
-    # Safely access the last row for title info
-    if not df_plot.empty:
-        close = df_plot["Close"].iloc[-1]
-        previous_close = df_plot["Close"].iloc[-2] if len(df_plot) > 1 else float('nan')
-        change_percent = (close - previous_close) / previous_close * 100 if previous_close != 0 else float('nan')
-        ema5 = df_plot["EMA5"].iloc[-1]
-        ema20 = df_plot["EMA20"].iloc[-1]
-        ema40 = df_plot["EMA40"].iloc[-1]
-        gap20 = (close - ema20) / ema20 * 100 if ema20 != 0 else float('inf')
-        gap40 = (close - ema40) / ema40 * 100 if ema40 != 0 else float('inf')
-        bb_upper = df_plot["BB_Upper"].iloc[-1]
-        bb_lower = df_plot["BB_Lower"].iloc[-1]
-        bb_ma = df_plot["BB_MA"].iloc[-1]
-    else:
-        close, previous_close, change_percent, ema5, ema20, ema40 = [float('nan')]*6
-        gap20, gap40 = float('nan'), float('nan')
-        bb_upper, bb_lower, bb_ma = [float('nan')] * 3
+            min_data_for_full_calc = 40
+        else:  # Monthly
+            min_data_for_full_calc = 40
+        
+        if len(df_input) < min_data_for_full_calc:
+            logging.warning(f"Not enough data for accurate full indicator calculation for {freq_label} chart for {ticker}. Need at least {min_data_for_full_calc} periods, got {len(df_input)}. Only {num_bars_to_show} bars will be shown if possible.")
+            if len(df_input) < num_bars_to_show:
+                logging.warning(f"Insufficient data to plot {num_bars_to_show} bars for {freq_label} chart for {ticker}. Skipping chart generation.")
+                return None
+        
+        # 저장된 indicator 데이터 읽어오기
+        from services.indicator_service import indicator_service
+        
+        # 시간대 매핑
+        timeframe_map = {
+            'Daily': 'd',
+            'Weekly': 'w',
+            'Monthly': 'm'
+        }
+        timeframe = timeframe_map[freq_label]
+        
+        # 저장된 indicator 데이터 읽어오기
+        macd_data = indicator_service.get_latest_indicator_data(ticker, 'macd', timeframe, rows=num_bars_to_show)
+        ema5_data = indicator_service.get_latest_indicator_data(ticker, 'ema5', timeframe, rows=num_bars_to_show)
+        ema20_data = indicator_service.get_latest_indicator_data(ticker, 'ema20', timeframe, rows=num_bars_to_show)
+        ema40_data = indicator_service.get_latest_indicator_data(ticker, 'ema40', timeframe, rows=num_bars_to_show)
+        bollinger_data = indicator_service.get_latest_indicator_data(ticker, 'bollinger', timeframe, rows=num_bars_to_show)
+        ichimoku_data = indicator_service.get_latest_indicator_data(ticker, 'ichimoku', timeframe, rows=num_bars_to_show)
+        
+        # 기본 차트 데이터 준비
+        df_calc = df_input.copy()
+        
+        # 저장된 indicator 데이터가 없으면 직접 계산 (폴백)
+        if macd_data is None:
+            logging.warning(f"[{ticker}] No saved MACD data found for {timeframe}, calculating directly")
+            df_calc['MACD_TA'] = ta.trend.macd(df_calc['Close'])
+            df_calc['MACD_Signal_TA'] = ta.trend.macd_signal(df_calc['Close'])
+            df_calc['MACD_Hist_TA'] = ta.trend.macd_diff(df_calc['Close'])
+        else:
+            # 저장된 MACD 데이터 사용
+            df_calc['MACD_TA'] = pd.Series(index=df_calc.index, dtype=float)
+            df_calc['MACD_Signal_TA'] = pd.Series(index=df_calc.index, dtype=float)
+            df_calc['MACD_Hist_TA'] = pd.Series(index=df_calc.index, dtype=float)
+            
+            # 인덱스 일치시켜 데이터 복사
+            for idx in macd_data.index:
+                if idx in df_calc.index:
+                    df_calc.loc[idx, 'MACD_TA'] = macd_data.loc[idx, 'MACD']
+                    df_calc.loc[idx, 'MACD_Signal_TA'] = macd_data.loc[idx, 'MACD_Signal']
+                    df_calc.loc[idx, 'MACD_Hist_TA'] = macd_data.loc[idx, 'MACD_Histogram']
+        
+        # EMA 데이터 처리
+        if ema5_data is not None and ema20_data is not None and ema40_data is not None:
+            df_calc['EMA5'] = pd.Series(index=df_calc.index, dtype=float)
+            df_calc['EMA20'] = pd.Series(index=df_calc.index, dtype=float)
+            df_calc['EMA40'] = pd.Series(index=df_calc.index, dtype=float)
+            
+            for idx in ema5_data.index:
+                if idx in df_calc.index:
+                    df_calc.loc[idx, 'EMA5'] = ema5_data.loc[idx, 'EMA']
+            for idx in ema20_data.index:
+                if idx in df_calc.index:
+                    df_calc.loc[idx, 'EMA20'] = ema20_data.loc[idx, 'EMA']
+            for idx in ema40_data.index:
+                if idx in df_calc.index:
+                    df_calc.loc[idx, 'EMA40'] = ema40_data.loc[idx, 'EMA']
+        else:
+            # 직접 계산 (폴백)
+            df_calc["EMA5"] = ta.trend.ema_indicator(df_calc["Close"], window=5)
+            df_calc["EMA20"] = ta.trend.ema_indicator(df_calc["Close"], window=20)
+            df_calc["EMA40"] = ta.trend.ema_indicator(df_calc["Close"], window=40)
+        
+        # 볼린저 밴드 데이터 처리
+        if bollinger_data is not None:
+            df_calc['BB_Upper'] = pd.Series(index=df_calc.index, dtype=float)
+            df_calc['BB_Lower'] = pd.Series(index=df_calc.index, dtype=float)
+            df_calc['BB_MA'] = pd.Series(index=df_calc.index, dtype=float)
+            
+            for idx in bollinger_data.index:
+                if idx in df_calc.index:
+                    df_calc.loc[idx, 'BB_Upper'] = bollinger_data.loc[idx, 'BB_Upper']
+                    df_calc.loc[idx, 'BB_Lower'] = bollinger_data.loc[idx, 'BB_Lower']
+                    df_calc.loc[idx, 'BB_MA'] = bollinger_data.loc[idx, 'BB_Middle']
+        else:
+            # 직접 계산 (폴백)
+            bollinger = BollingerBands(close=df_calc["Close"], window=20, window_dev=2)
+            df_calc["BB_Upper"] = bollinger.bollinger_hband()
+            df_calc["BB_Lower"] = bollinger.bollinger_lband()
+            df_calc["BB_MA"] = bollinger.bollinger_mavg()
+        
+        # 일목균형표 데이터 처리
+        if ichimoku_data is not None:
+            df_calc['Ichimoku_Conversion'] = pd.Series(index=df_calc.index, dtype=float)
+            df_calc['Ichimoku_Base'] = pd.Series(index=df_calc.index, dtype=float)
+            df_calc['Ichimoku_SpanA'] = pd.Series(index=df_calc.index, dtype=float)
+            df_calc['Ichimoku_SpanB'] = pd.Series(index=df_calc.index, dtype=float)
+            
+            for idx in ichimoku_data.index:
+                if idx in df_calc.index:
+                    df_calc.loc[idx, 'Ichimoku_Conversion'] = ichimoku_data.loc[idx, 'Tenkan']
+                    df_calc.loc[idx, 'Ichimoku_Base'] = ichimoku_data.loc[idx, 'Kijun']
+                    df_calc.loc[idx, 'Ichimoku_SpanA'] = ichimoku_data.loc[idx, 'Senkou_A']
+                    df_calc.loc[idx, 'Ichimoku_SpanB'] = ichimoku_data.loc[idx, 'Senkou_B']
+        else:
+            # 직접 계산 (폴백)
+            ichimoku = IchimokuIndicator(high=df_calc["High"], low=df_calc["Low"])
+            df_calc["Ichimoku_Conversion"] = ichimoku.ichimoku_conversion_line()
+            df_calc["Ichimoku_Base"] = ichimoku.ichimoku_base_line()
+            df_calc["Ichimoku_SpanA"] = ichimoku.ichimoku_a()
+            df_calc["Ichimoku_SpanB"] = ichimoku.ichimoku_b()
+        
+        # 후행스팬은 직접 계산
+        df_calc["Ichimoku_Lagging"] = df_calc["Close"].shift(-26)
+        
+        # NaN 값 처리
+        df_calc.dropna(subset=['EMA40', 'MACD_Hist_TA', 'BB_Upper', 'BB_Lower', 'BB_MA'], inplace=True)
+        
+        if df_calc.empty:
+            logging.warning(f"DataFrame for calculations became empty after dropping NaNs for {freq_label} chart for {ticker}.")
+            return None
+        
+        # 차트용 데이터 준비
+        df_plot = df_calc[-num_bars_to_show:].copy()
+        
+        if df_plot.empty:
+            logging.warning(f"DataFrame for plotting became empty for {freq_label} chart for {ticker}.")
+            return None
+        
+        current_date_str = datetime.now().strftime("%Y%m%d")
+        chart_creation_date = datetime.now()
+        # 디버그 데이터 수집 (차트에 실제로 그려지는 데이터만)
+        daily_ema_data = []
+        daily_macd_data = []
+        daily_bb_data = []
+        daily_ichimoku_data = []
+        weekly_ema_data = []
+        weekly_macd_data = []
+        weekly_bb_data = []
+        weekly_ichimoku_data = []
+        monthly_ema_data = []
+        monthly_macd_data = []
+        monthly_bb_data = []
+        monthly_ichimoku_data = []
+        for idx in df_plot.index:
+            date_str = idx.strftime('%Y-%m-%d')
+            ema_data = f"{date_str}, EMA5: {df_plot.loc[idx, 'EMA5']:.4f}, EMA20: {df_plot.loc[idx, 'EMA20']:.4f}, EMA40: {df_plot.loc[idx, 'EMA40']:.4f}"
+            macd_data = f"{date_str}, MACD: {df_plot.loc[idx, 'MACD_TA']:.4f}, Signal: {df_plot.loc[idx, 'MACD_Signal_TA']:.4f}, Hist: {df_plot.loc[idx, 'MACD_Hist_TA']:.4f}"
+            bb_data = f"{date_str}, BB_Upper: {df_plot.loc[idx, 'BB_Upper']:.4f}, BB_Lower: {df_plot.loc[idx, 'BB_Lower']:.4f}, BB_MA: {df_plot.loc[idx, 'BB_MA']:.4f}"
+            if freq_label == "Daily":
+                daily_ema_data.append(ema_data)
+                daily_macd_data.append(macd_data)
+                daily_bb_data.append(bb_data)
+                ichimoku_conv = df_plot.loc[idx, 'Ichimoku_Conversion'] if pd.notna(df_plot.loc[idx, 'Ichimoku_Conversion']) else 'NaN'
+                ichimoku_base = df_plot.loc[idx, 'Ichimoku_Base'] if pd.notna(df_plot.loc[idx, 'Ichimoku_Base']) else 'NaN'
+                ichimoku_spana = df_plot.loc[idx, 'Ichimoku_SpanA'] if pd.notna(df_plot.loc[idx, 'Ichimoku_SpanA']) else 'NaN'
+                ichimoku_spanb = df_plot.loc[idx, 'Ichimoku_SpanB'] if pd.notna(df_plot.loc[idx, 'Ichimoku_SpanB']) else 'NaN'
+                ichimoku_lag = df_plot.loc[idx, 'Ichimoku_Lagging'] if pd.notna(df_plot.loc[idx, 'Ichimoku_Lagging']) else 'NaN'
+                daily_ichimoku_data.append(f"{date_str}, Ichimoku_Conversion: {ichimoku_conv}, Ichimoku_Base: {ichimoku_base}, Ichimoku_SpanA: {ichimoku_spana}, Ichimoku_SpanB: {ichimoku_spanb}, Ichimoku_Lagging: {ichimoku_lag}")
+            elif freq_label == "Weekly":
+                weekly_ema_data.append(ema_data)
+                weekly_macd_data.append(macd_data)
+                weekly_bb_data.append(bb_data)
+                ichimoku_conv = df_plot.loc[idx, 'Ichimoku_Conversion'] if pd.notna(df_plot.loc[idx, 'Ichimoku_Conversion']) else 'NaN'
+                ichimoku_base = df_plot.loc[idx, 'Ichimoku_Base'] if pd.notna(df_plot.loc[idx, 'Ichimoku_Base']) else 'NaN'
+                ichimoku_spana = df_plot.loc[idx, 'Ichimoku_SpanA'] if pd.notna(df_plot.loc[idx, 'Ichimoku_SpanA']) else 'NaN'
+                ichimoku_spanb = df_plot.loc[idx, 'Ichimoku_SpanB'] if pd.notna(df_plot.loc[idx, 'Ichimoku_SpanB']) else 'NaN'
+                ichimoku_lag = df_plot.loc[idx, 'Ichimoku_Lagging'] if pd.notna(df_plot.loc[idx, 'Ichimoku_Lagging']) else 'NaN'
+                weekly_ichimoku_data.append(f"{date_str}, Ichimoku_Conversion: {ichimoku_conv}, Ichimoku_Base: {ichimoku_base}, Ichimoku_SpanA: {ichimoku_spana}, Ichimoku_SpanB: {ichimoku_spanb}, Ichimoku_Lagging: {ichimoku_lag}")
+            elif freq_label == "Monthly":
+                monthly_ema_data.append(ema_data)
+                monthly_macd_data.append(macd_data)
+                monthly_bb_data.append(bb_data)
+                ichimoku_conv = df_plot.loc[idx, 'Ichimoku_Conversion'] if pd.notna(df_plot.loc[idx, 'Ichimoku_Conversion']) else 'NaN'
+                ichimoku_base = df_plot.loc[idx, 'Ichimoku_Base'] if pd.notna(df_plot.loc[idx, 'Ichimoku_Base']) else 'NaN'
+                ichimoku_spana = df_plot.loc[idx, 'Ichimoku_SpanA'] if pd.notna(df_plot.loc[idx, 'Ichimoku_SpanA']) else 'NaN'
+                ichimoku_spanb = df_plot.loc[idx, 'Ichimoku_SpanB'] if pd.notna(df_plot.loc[idx, 'Ichimoku_SpanB']) else 'NaN'
+                ichimoku_lag = df_plot.loc[idx, 'Ichimoku_Lagging'] if pd.notna(df_plot.loc[idx, 'Ichimoku_Lagging']) else 'NaN'
+                monthly_ichimoku_data.append(f"{date_str}, Ichimoku_Conversion: {ichimoku_conv}, Ichimoku_Base: {ichimoku_base}, Ichimoku_SpanA: {ichimoku_spana}, Ichimoku_SpanB: {ichimoku_spanb}, Ichimoku_Lagging: {ichimoku_lag}")
+        # Safely access the last row for title info
+        if not df_plot.empty:
+            close = df_plot["Close"].iloc[-1]
+            previous_close = df_plot["Close"].iloc[-2] if len(df_plot) > 1 else float('nan')
+            change_percent = (close - previous_close) / previous_close * 100 if previous_close != 0 else float('nan')
+            ema5 = df_plot["EMA5"].iloc[-1]
+            ema20 = df_plot["EMA20"].iloc[-1]
+            ema40 = df_plot["EMA40"].iloc[-1]
+            gap20 = (close - ema20) / ema20 * 100 if ema20 != 0 else float('inf')
+            gap40 = (close - ema40) / ema40 * 100 if ema40 != 0 else float('inf')
+            bb_upper = df_plot["BB_Upper"].iloc[-1]
+            bb_lower = df_plot["BB_Lower"].iloc[-1]
+            bb_ma = df_plot["BB_MA"].iloc[-1]
+        else:
+            close, previous_close, change_percent, ema5, ema20, ema40 = [float('nan')]*6
+            gap20, gap40 = float('nan'), float('nan')
+            bb_upper, bb_lower, bb_ma = [float('nan')] * 3
 
-    title_line = f"{ticker} - {freq_label} Chart (as of {chart_creation_date.strftime('%Y-%m-%d')})"
-    price_line = f"Close: {close:.2f} ({change_percent:+.2f}%), EMA5: {ema5:.2f}, EMA20: {ema20:.2f}, EMA40: {ema40:.2f}"
-    gap_line = f"Gap EMA20: {gap20:.2f}%, EMA40: {gap40:.2f}%"
-    bollinger_line = f"BB_Upper: {bb_upper:.2f}, BB_Lower: {bb_lower:.2f}, BB_MA: {bb_ma:.2f}"
+        title_line = f"{ticker} - {freq_label} Chart (as of {chart_creation_date.strftime('%Y-%m-%d')})"
+        price_line = f"Close: {close:.2f} ({change_percent:+.2f}%), EMA5: {ema5:.2f}, EMA20: {ema20:.2f}, EMA40: {ema40:.2f}"
+        gap_line = f"Gap EMA20: {gap20:.2f}%, EMA40: {gap40:.2f}%"
+        bollinger_line = f"BB_Upper: {bb_upper:.2f}, BB_Lower: {bb_lower:.2f}, BB_MA: {bb_ma:.2f}"
 
-    # 패널 번호 할당: 0=메인, 1=거래량, 2=MACD
-    panel_map = {
-        'Daily': 2,
-        'Weekly': 2,
-        'Monthly': 2
-    }
-    macd_panel = panel_map.get(freq_label, 2)
+        # 패널 번호 할당: 0=메인, 1=거래량, 2=MACD
+        panel_map = {
+            'Daily': 2,
+            'Weekly': 2,
+            'Monthly': 2
+        }
+        macd_panel = panel_map.get(freq_label, 2)
 
-    apds = [
-        mpf.make_addplot(df_plot["EMA5"], color="Red", label="EMA 5", panel=0),
-        mpf.make_addplot(df_plot["EMA20"], color="orange", label="EMA 20", panel=0),
-        mpf.make_addplot(df_plot["EMA40"], color="green", label="EMA 40", panel=0),
-        # MACD
-        mpf.make_addplot(df_plot["MACD_TA"], panel=macd_panel, color="purple", ylabel=f"MACD_{freq_label}", type='line', width=1.2, secondary_y=False, label="MACD"),
-        mpf.make_addplot(df_plot["MACD_Signal_TA"], panel=macd_panel, color="red", type='line', width=1.2, secondary_y=False, label="MACD Signal"),
-        mpf.make_addplot(df_plot["MACD_Hist_TA"], type='bar', panel=macd_panel, color='gray', width=0.7, alpha=0.5, label="MACD_Hist", secondary_y=False),
-        mpf.make_addplot([0]*len(df_plot), panel=macd_panel, color='black', type='line', width=0.8, linestyle='dashed', secondary_y=False, label="Zero Line"),
-        # 볼린저 밴드는 matplotlib로 오버레이하므로 제거
-    ]
+        apds = [
+            mpf.make_addplot(df_plot["EMA5"], color="Red", label="EMA 5", panel=0),
+            mpf.make_addplot(df_plot["EMA20"], color="orange", label="EMA 20", panel=0),
+            mpf.make_addplot(df_plot["EMA40"], color="green", label="EMA 40", panel=0),
+            # MACD
+            mpf.make_addplot(df_plot["MACD_TA"], panel=macd_panel, color="purple", ylabel=f"MACD_{freq_label}", type='line', width=1.2, secondary_y=False, label="MACD"),
+            mpf.make_addplot(df_plot["MACD_Signal_TA"], panel=macd_panel, color="red", type='line', width=1.2, secondary_y=False, label="MACD Signal"),
+            mpf.make_addplot(df_plot["MACD_Hist_TA"], type='bar', panel=macd_panel, color='gray', width=0.7, alpha=0.5, label="MACD_Hist", secondary_y=False),
+            mpf.make_addplot([0]*len(df_plot), panel=macd_panel, color='black', type='line', width=0.8, linestyle='dashed', secondary_y=False, label="Zero Line"),
+            # 볼린저 밴드는 matplotlib로 오버레이하므로 제거
+        ]
 
-    volume_panel_height = 1
-    macd_panel_height = 1
-    main_panel_ratio = 3
-    # 총 3개 패널: 0(메인), 1(거래량), 2(MACD)
-    panel_ratios = (main_panel_ratio, volume_panel_height, macd_panel_height)
+        volume_panel_height = 1
+        macd_panel_height = 1
+        main_panel_ratio = 3
+        # 총 3개 패널: 0(메인), 1(거래량), 2(MACD)
+        panel_ratios = (main_panel_ratio, volume_panel_height, macd_panel_height)
 
-    fig, axes = mpf.plot(
-        df_plot,
-        type="candle",
-        volume=True,
-        style="yahoo",
-        addplot=apds,
-        returnfig=True,
-        panel_ratios=panel_ratios,
-        tight_layout=True,
-    )
+        fig, axes = mpf.plot(
+            df_plot,
+            type="candle",
+            volume=True,
+            style="yahoo",
+            addplot=apds,
+            returnfig=True,
+            panel_ratios=panel_ratios,
+            tight_layout=True,
+        )
 
-    fig.suptitle(f"{title_line}\n{price_line}\n{gap_line}\n{bollinger_line}", fontsize=13, y=1.15)
+        fig.suptitle(f"{title_line}\n{price_line}\n{gap_line}\n{bollinger_line}", fontsize=13, y=1.15)
 
-    # 볼린저 밴드를 matplotlib로 오버레이
-    main_ax = axes[0]  # 메인 차트 축 (패널 0)
+        # 볼린저 밴드를 matplotlib로 오버레이
+        main_ax = axes[0]  # 메인 차트 축 (패널 0)
+        
+        # 볼린저 밴드 오버레이
+        main_ax.fill_between(range(len(df_plot)), df_plot["BB_Upper"], df_plot["BB_Lower"], 
+                           alpha=0.3, color='lightgrey', label='Bollinger Bands')
+        main_ax.plot(range(len(df_plot)), df_plot["BB_Upper"], color='Grey', linewidth=1.0, label='BB_Upper')
+        main_ax.plot(range(len(df_plot)), df_plot["BB_Lower"], color='Grey', linewidth=1.0, label='BB_Lower')
+        main_ax.plot(range(len(df_plot)), df_plot["BB_MA"], color='black', linewidth=1.0, label='BB_MA')
+
+        # 일목균형표 오버레이
+        # 선행스팬1과 선행스팬2 사이를 구름으로 채우기
+        span_a = df_plot["Ichimoku_SpanA"].dropna()
+        span_b = df_plot["Ichimoku_SpanB"].dropna()
+        
+        # 일목균형표 차트 그리기 비활성화 (계산은 유지)
+        # if not span_a.empty and not span_b.empty:
+        #     # 구름 영역 채우기 (선행스팬1이 선행스팬2보다 높을 때는 빨간색, 낮을 때는 초록색)
+        #     cloud_x = range(len(span_a))
+        #     main_ax.fill_between(cloud_x, span_a, span_b, 
+        #                        where=(span_a >= span_b), alpha=0.3, color='lightgreen', label='Ichimoku Cloud (Bullish)')
+        #     main_ax.fill_between(cloud_x, span_a, span_b, 
+        #                        where=(span_a < span_b), alpha=0.3, color='lightcoral', label='Ichimoku Cloud (Bearish)')
+        #     
+        #     # 선행스팬 라인 그리기
+        #     main_ax.plot(cloud_x, span_a, color='blue', linewidth=1.5, label='Senkou Span A', alpha=0.8, linestyle='--')
+        #     main_ax.plot(cloud_x, span_b, color='red', linewidth=1.5, label='Senkou Span B', alpha=0.8, linestyle='--')
+        
+        # 전환선, 기준선, 후행스팬 그리기
+        conversion = df_plot["Ichimoku_Conversion"].dropna()
+        base = df_plot["Ichimoku_Base"].dropna()
+        lagging = df_plot["Ichimoku_Lagging"].dropna()
+        
+        # 일목균형표 선 그리기 비활성화 (계산은 유지)
+        # if not conversion.empty:
+        #     main_ax.plot(range(len(conversion)), conversion, color='yellow', linewidth=1.5, label='Tenkan-sen (Conversion)', alpha=0.8, linestyle='--')
+        # if not base.empty:
+        #     main_ax.plot(range(len(base)), base, color='purple', linewidth=1.5, label='Kijun-sen (Base)', alpha=0.8, linestyle='--')
+        # if not lagging.empty:
+        #     main_ax.plot(range(len(lagging)), lagging, color='green', linewidth=1.5, label='Chikou Span (Lagging)', alpha=0.8, linestyle='--')
+
+        for ax in axes:
+            handles, labels = ax.get_legend_handles_labels()
+            if handles:
+                ax.legend(handles, labels, loc="upper left", fontsize="small")
+
+        # 날짜별 폴더 구조 사용
+        date_folder = get_date_folder_path(CHART_DIR, current_date_str)
+        path = os.path.join(date_folder, f"{ticker}_{suffix}_{current_date_str}.png")
+        fig.savefig(path, bbox_inches="tight")
+        plt.close('all')
+        
+        # 디버그 파일 생성
+        debug_date_folder = get_date_folder_path(DEBUG_DIR, current_date_str)
+        
+        # EMA 디버그 파일
+        if freq_label == "Daily":
+            ema_debug_lines = []
+            ema_debug_lines.append(f"[EMA DEBUG] Ticker: {ticker} (Chart Generation)\n")
+            ema_debug_lines.append("[Daily EMA for Chart]")
+            ema_debug_lines.extend(daily_ema_data)
+            ema_debug_path = os.path.join(debug_date_folder, f"{ticker}_ema_chart_debug_{current_date_str}.txt")
+            with open(ema_debug_path, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(ema_debug_lines))
+        
+        return path
     
-    # 볼린저 밴드 오버레이
-    main_ax.fill_between(range(len(df_plot)), df_plot["BB_Upper"], df_plot["BB_Lower"], 
-                       alpha=0.3, color='lightgrey', label='Bollinger Bands')
-    main_ax.plot(range(len(df_plot)), df_plot["BB_Upper"], color='Grey', linewidth=1.0, label='BB_Upper')
-    main_ax.plot(range(len(df_plot)), df_plot["BB_Lower"], color='Grey', linewidth=1.0, label='BB_Lower')
-    main_ax.plot(range(len(df_plot)), df_plot["BB_MA"], color='black', linewidth=1.0, label='BB_MA')
-
-    # 일목균형표 오버레이
-    # 선행스팬1과 선행스팬2 사이를 구름으로 채우기
-    span_a = df_plot["Ichimoku_SpanA"].dropna()
-    span_b = df_plot["Ichimoku_SpanB"].dropna()
-    
-    # 일목균형표 차트 그리기 비활성화 (계산은 유지)
-    # if not span_a.empty and not span_b.empty:
-    #     # 구름 영역 채우기 (선행스팬1이 선행스팬2보다 높을 때는 빨간색, 낮을 때는 초록색)
-    #     cloud_x = range(len(span_a))
-    #     main_ax.fill_between(cloud_x, span_a, span_b, 
-    #                        where=(span_a >= span_b), alpha=0.3, color='lightgreen', label='Ichimoku Cloud (Bullish)')
-    #     main_ax.fill_between(cloud_x, span_a, span_b, 
-    #                        where=(span_a < span_b), alpha=0.3, color='lightcoral', label='Ichimoku Cloud (Bearish)')
-    #     
-    #     # 선행스팬 라인 그리기
-    #     main_ax.plot(cloud_x, span_a, color='blue', linewidth=1.5, label='Senkou Span A', alpha=0.8, linestyle='--')
-    #     main_ax.plot(cloud_x, span_b, color='red', linewidth=1.5, label='Senkou Span B', alpha=0.8, linestyle='--')
-    
-    # 전환선, 기준선, 후행스팬 그리기
-    conversion = df_plot["Ichimoku_Conversion"].dropna()
-    base = df_plot["Ichimoku_Base"].dropna()
-    lagging = df_plot["Ichimoku_Lagging"].dropna()
-    
-    # 일목균형표 선 그리기 비활성화 (계산은 유지)
-    # if not conversion.empty:
-    #     main_ax.plot(range(len(conversion)), conversion, color='yellow', linewidth=1.5, label='Tenkan-sen (Conversion)', alpha=0.8, linestyle='--')
-    # if not base.empty:
-    #     main_ax.plot(range(len(base)), base, color='purple', linewidth=1.5, label='Kijun-sen (Base)', alpha=0.8, linestyle='--')
-    # if not lagging.empty:
-    #     main_ax.plot(range(len(lagging)), lagging, color='green', linewidth=1.5, label='Chikou Span (Lagging)', alpha=0.8, linestyle='--')
-
-    for ax in axes:
-        handles, labels = ax.get_legend_handles_labels()
-        if handles:
-            ax.legend(handles, labels, loc="upper left", fontsize="small")
-
-    # 날짜별 폴더 구조 사용
-    date_folder = get_date_folder_path(CHART_DIR, current_date_str)
-    path = os.path.join(date_folder, f"{ticker}_{suffix}_{current_date_str}.png")
-    fig.savefig(path, bbox_inches="tight")
-    plt.close('all')
-    
-    # 디버그 파일 생성
-    debug_date_folder = get_date_folder_path(DEBUG_DIR, current_date_str)
-    
-    # EMA 디버그 파일
-    if freq_label == "Daily":
-        ema_debug_lines = []
-        ema_debug_lines.append(f"[EMA DEBUG] Ticker: {ticker} (Chart Generation)\n")
-        ema_debug_lines.append("[Daily EMA for Chart]")
-        ema_debug_lines.extend(daily_ema_data)
-        ema_debug_path = os.path.join(debug_date_folder, f"{ticker}_ema_chart_debug_{current_date_str}.txt")
-        with open(ema_debug_path, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(ema_debug_lines))
-    
-    return path 
+    except Exception as e:
+        logging.error(f"Error in chart generation for {ticker} {freq_label}: {str(e)}")
+        return None

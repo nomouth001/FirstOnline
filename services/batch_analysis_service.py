@@ -12,6 +12,8 @@ from services.analysis_service import analyze_ticker_internal_logic, is_valid_an
 from services.progress_service import start_batch_progress, end_batch_progress, update_progress, is_stop_requested
 from utils.file_manager import get_date_folder_path
 from utils.timeout_utils import safe_chart_generation, safe_ai_analysis
+from utils.batch_recovery import start_batch_tracking, update_batch_progress, end_batch_tracking, check_and_recover_batches, get_batch_status
+from utils.memory_monitor import check_memory_before_analysis, log_memory_usage
 from config import ANALYSIS_DIR, MULTI_SUMMARY_DIR, CHART_GENERATION_TIMEOUT, AI_ANALYSIS_TIMEOUT
 
 # Constants
@@ -142,6 +144,11 @@ def _process_tickers_batch(tickers_to_process, user, progress_id, summary_filena
     # progress_id에 따라 타입 결정
     batch_type = "multiple" if progress_id.startswith("multi_") else "single"
     start_batch_progress(batch_type, total_tickers, progress_id)
+    
+    # 배치 복구 추적 시작
+    list_names = [progress_id] if batch_type == "single" else progress_id.split("_")[-1].split(",")
+    start_batch_tracking(progress_id, batch_type, user.id, list_names, total_tickers)
+    
     logging.info(f"Starting batch processing ({batch_type}) for {total_tickers} tickers for '{progress_id}'")
 
     try:
@@ -156,6 +163,15 @@ def _process_tickers_batch(tickers_to_process, user, progress_id, summary_filena
 
             logging.info(f"Processing ticker {i}/{total_tickers}: {ticker} from list(s): {progress_id}")
             update_progress(ticker=ticker, processed=i, total=total_tickers, list_name=progress_id)
+            
+            # 메모리 체크
+            if not check_memory_before_analysis(ticker):
+                logging.error(f"[{ticker}] 메모리 부족으로 배치 처리 중단")
+                end_batch_tracking(progress_id, False, "메모리 부족")
+                return False, {"error": "메모리 부족으로 배치 처리가 중단되었습니다."}, 500, {}
+            
+            # 메모리 사용량 로그
+            log_memory_usage(f"배치 처리 중 - {ticker}")
 
             max_retries = 3
             retry_count = 0
@@ -287,6 +303,11 @@ def _process_tickers_batch(tickers_to_process, user, progress_id, summary_filena
 
     finally:
         end_batch_progress()
+        # 배치 복구 추적 종료
+        try:
+            end_batch_tracking(progress_id, True)
+        except Exception as e:
+            logging.error(f"배치 추적 종료 중 오류: {e}")
         logging.info(f"Batch processing finished for '{progress_id}'")
 
 def run_single_list_analysis(list_name, user):

@@ -1,0 +1,271 @@
+{% extends "base.html" %}
+
+{% block title %}로그 관리{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h1>📋 로그 관리</h1>
+    <p>시스템 로그를 실시간으로 모니터링할 수 있습니다.</p>
+</div>
+
+<div style="display: grid; grid-template-columns: 300px 1fr; gap: 2rem;">
+    <!-- 좌측: 로그 파일 목록 -->
+    <div class="card">
+        <h3>📁 로그 파일 목록</h3>
+        <div id="log-files-list">
+            {% for file in log_files %}
+            <div class="log-file-item" data-file-path="{{ file.path }}">
+                <div style="font-weight: bold;">{{ file.name }}</div>
+                <div style="font-size: 0.9em; color: #666;">
+                    {{ file.size_mb }}MB | {{ file.modified_str }}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        
+        <div style="margin-top: 1rem;">
+            <button id="btn-start-stream" class="btn btn-primary">🚀 스트리밍 시작</button>
+            <button id="btn-stop-stream" class="btn btn-secondary" style="display: none;">⏹️ 스트리밍 중지</button>
+        </div>
+        
+        <div style="margin-top: 1rem;">
+            <label>
+                <input type="checkbox" id="auto-scroll" checked> 자동 스크롤
+            </label>
+        </div>
+    </div>
+    
+    <!-- 우측: 터미널 스타일 로그 표시 -->
+    <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <h3>🖥️ 실시간 로그</h3>
+            <div>
+                <button id="btn-clear-log" class="btn btn-warning">🗑️ 화면 지우기</button>
+                <span id="connection-status" style="margin-left: 1rem; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.9em;">
+                    연결 대기
+                </span>
+            </div>
+        </div>
+        
+        <div id="log-terminal" style="
+            background: #1a1a1a;
+            color: #00ff00;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            padding: 1rem;
+            height: 600px;
+            overflow-y: auto;
+            border: 2px solid #333;
+            border-radius: 8px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        ">
+            <div style="color: #888;">로그 파일을 선택하고 스트리밍을 시작하세요...</div>
+        </div>
+        
+        <div style="margin-top: 1rem; font-size: 0.9em; color: #666;">
+            <strong>현재 파일:</strong> <span id="current-file">선택된 파일 없음</span>
+        </div>
+    </div>
+</div>
+
+<style>
+.log-file-item {
+    padding: 0.75rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    margin-bottom: 0.5rem;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.log-file-item:hover {
+    background-color: #f5f5f5;
+}
+
+.log-file-item.selected {
+    background-color: #007bff;
+    color: white;
+}
+
+.log-file-item.selected:hover {
+    background-color: #0056b3;
+}
+
+#connection-status.connected {
+    background-color: #28a745;
+    color: white;
+}
+
+#connection-status.disconnected {
+    background-color: #dc3545;
+    color: white;
+}
+
+#connection-status.connecting {
+    background-color: #ffc107;
+    color: black;
+}
+
+.log-line {
+    margin: 0.25rem 0;
+    padding: 0.1rem 0;
+}
+
+.log-line.error {
+    color: #ff6b6b;
+}
+
+.log-line.warning {
+    color: #ffd43b;
+}
+
+.log-line.info {
+    color: #74c0fc;
+}
+
+.log-line.success {
+    color: #51cf66;
+}
+</style>
+
+<script>
+let eventSource = null;
+let currentFile = null;
+let autoScroll = true;
+let logLineCount = 0;
+const maxLines = 1000;
+
+document.addEventListener('DOMContentLoaded', function() {
+    const logFileItems = document.querySelectorAll('.log-file-item');
+    const startBtn = document.getElementById('btn-start-stream');
+    const stopBtn = document.getElementById('btn-stop-stream');
+    const clearBtn = document.getElementById('btn-clear-log');
+    const autoScrollCheckbox = document.getElementById('auto-scroll');
+    const terminal = document.getElementById('log-terminal');
+    const currentFileSpan = document.getElementById('current-file');
+    const connectionStatus = document.getElementById('connection-status');
+
+    // 로그 파일 선택
+    logFileItems.forEach(item => {
+        item.addEventListener('click', function() {
+            logFileItems.forEach(i => i.classList.remove('selected'));
+            this.classList.add('selected');
+            currentFile = this.dataset.filePath;
+            currentFileSpan.textContent = this.querySelector('div').textContent;
+        });
+    });
+
+    // 스트리밍 시작
+    startBtn.addEventListener('click', function() {
+        if (!currentFile) {
+            alert('로그 파일을 선택해주세요.');
+            return;
+        }
+
+        startStreaming();
+    });
+
+    // 스트리밍 중지
+    stopBtn.addEventListener('click', function() {
+        stopStreaming();
+    });
+
+    // 화면 지우기
+    clearBtn.addEventListener('click', function() {
+        terminal.innerHTML = '<div style="color: #888;">로그 화면이 지워졌습니다...</div>';
+        logLineCount = 0;
+    });
+
+    // 자동 스크롤 토글
+    autoScrollCheckbox.addEventListener('change', function() {
+        autoScroll = this.checked;
+    });
+
+    function startStreaming() {
+        if (eventSource) {
+            eventSource.close();
+        }
+
+        updateConnectionStatus('connecting', '연결 중...');
+        
+        eventSource = new EventSource(`/admin/logs/stream?file=${encodeURIComponent(currentFile)}`);
+        
+        eventSource.onopen = function() {
+            updateConnectionStatus('connected', '연결됨');
+            startBtn.style.display = 'none';
+            stopBtn.style.display = 'inline-block';
+        };
+
+        eventSource.onmessage = function(event) {
+            const logLine = event.data;
+            if (logLine.trim()) {
+                addLogLine(logLine);
+            }
+        };
+
+        eventSource.onerror = function(event) {
+            updateConnectionStatus('disconnected', '연결 오류');
+            console.error('EventSource error:', event);
+        };
+    }
+
+    function stopStreaming() {
+        if (eventSource) {
+            eventSource.close();
+            eventSource = null;
+        }
+        
+        updateConnectionStatus('disconnected', '연결 중지');
+        startBtn.style.display = 'inline-block';
+        stopBtn.style.display = 'none';
+    }
+
+    function addLogLine(line) {
+        const logDiv = document.createElement('div');
+        logDiv.className = 'log-line';
+        
+        // 로그 레벨에 따른 색상 적용
+        if (line.includes('ERROR') || line.includes('오류')) {
+            logDiv.classList.add('error');
+        } else if (line.includes('WARNING') || line.includes('경고')) {
+            logDiv.classList.add('warning');
+        } else if (line.includes('INFO') || line.includes('정보')) {
+            logDiv.classList.add('info');
+        } else if (line.includes('successful') || line.includes('성공')) {
+            logDiv.classList.add('success');
+        }
+        
+        // 타임스탬프 추가
+        const timestamp = new Date().toLocaleTimeString();
+        logDiv.textContent = `[${timestamp}] ${line}`;
+        
+        terminal.appendChild(logDiv);
+        logLineCount++;
+        
+        // 최대 라인 수 제한
+        if (logLineCount > maxLines) {
+            terminal.removeChild(terminal.firstChild);
+            logLineCount--;
+        }
+        
+        // 자동 스크롤
+        if (autoScroll) {
+            terminal.scrollTop = terminal.scrollHeight;
+        }
+    }
+
+    function updateConnectionStatus(status, text) {
+        connectionStatus.className = status;
+        connectionStatus.textContent = text;
+    }
+
+    // 페이지 종료 시 연결 정리
+    window.addEventListener('beforeunload', function() {
+        if (eventSource) {
+            eventSource.close();
+        }
+    });
+});
+</script>
+{% endblock %} 

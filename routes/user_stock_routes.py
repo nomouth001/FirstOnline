@@ -15,14 +15,16 @@ logger = logging.getLogger(__name__)
 @login_required
 def dashboard():
     """사용자 대시보드"""
-    stock_lists = StockList.query.filter_by(user_id=current_user.id).all()
+    from sqlalchemy.orm import joinedload
+    stock_lists = StockList.query.options(joinedload(StockList.stocks)).filter_by(user_id=current_user.id).all()
     return render_template('user/dashboard.html', stock_lists=stock_lists)
 
 @user_stock_bp.route('/stock-lists')
 @login_required
 def stock_lists():
     """사용자의 종목 리스트 목록"""
-    stock_lists = StockList.query.filter_by(user_id=current_user.id).all()
+    from sqlalchemy.orm import joinedload
+    stock_lists = StockList.query.options(joinedload(StockList.stocks)).filter_by(user_id=current_user.id).all()
     return render_template('user/stock_lists.html', stock_lists=stock_lists)
 
 @user_stock_bp.route('/stock-lists/create', methods=['GET', 'POST'])

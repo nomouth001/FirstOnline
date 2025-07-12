@@ -272,8 +272,8 @@ class IndicatorService:
             logging.error(f"[{ticker}] Error calculating Volume Ratios {timeframe}: {str(e)}")
             return None
     
-    def detect_crossovers(self, ticker, timeframe, days_back=30):
-        """골드크로스/데드크로스 감지 (최근 30일 내)"""
+    def detect_crossovers(self, ticker, timeframe, days_back=60):
+        """골드크로스/데드크로스 감지 (최근 60일 내)"""
         try:
             # 최근 파일들 찾기
             macd_files = glob.glob(os.path.join(self.indicators_dir, f"{ticker}_macd_{timeframe}_*.csv"))
@@ -326,20 +326,44 @@ class IndicatorService:
     def _detect_macd_crossover(self, macd_data):
         """MACD 크로스오버 감지"""
         try:
-            # MACD > Signal 크로스 찾기
-            macd_above = macd_data['MACD'] > macd_data['MACD_Signal']
-            crossover_points = macd_above != macd_above.shift(1)
+            if len(macd_data) < 2:
+                return None
             
-            if crossover_points.any():
-                last_cross_date = crossover_points[crossover_points].index[-1]
-                is_golden = macd_data.loc[last_cross_date, 'MACD'] > macd_data.loc[last_cross_date, 'MACD_Signal']
+            crossover_events = []
+            
+            for i in range(1, len(macd_data)):
+                # 이전 데이터와 현재 데이터
+                prev_idx = macd_data.index[i-1]
+                curr_idx = macd_data.index[i]
                 
-                return {
-                    'date': last_cross_date,
-                    'type': 'Golden Cross' if is_golden else 'Dead Cross',
-                    'macd': macd_data.loc[last_cross_date, 'MACD'],
-                    'signal': macd_data.loc[last_cross_date, 'MACD_Signal']
-                }
+                # 이전 상태와 현재 상태
+                prev_macd = macd_data.loc[prev_idx, 'MACD']
+                prev_signal = macd_data.loc[prev_idx, 'MACD_Signal']
+                curr_macd = macd_data.loc[curr_idx, 'MACD']
+                curr_signal = macd_data.loc[curr_idx, 'MACD_Signal']
+                
+                # 골든크로스: MACD가 Signal을 아래에서 위로 돌파
+                if prev_macd <= prev_signal and curr_macd > curr_signal:
+                    crossover_events.append({
+                        'date': curr_idx,
+                        'type': 'Golden Cross',
+                        'macd': curr_macd,
+                        'signal': curr_signal
+                    })
+                
+                # 데드크로스: MACD가 Signal을 위에서 아래로 돌파
+                elif prev_macd >= prev_signal and curr_macd < curr_signal:
+                    crossover_events.append({
+                        'date': curr_idx,
+                        'type': 'Dead Cross',
+                        'macd': curr_macd,
+                        'signal': curr_signal
+                    })
+            
+            # 가장 최근 크로스오버 반환
+            if crossover_events:
+                return crossover_events[-1]
+                
             return None
             
         except Exception as e:
@@ -351,18 +375,12 @@ class IndicatorService:
         try:
             # 공통 인덱스 찾기
             common_index = ema5_data.index.intersection(ema20_data.index).intersection(ema40_data.index)
-            if len(common_index) < 5:  # 최소 5개 데이터 필요
+            if len(common_index) < 2:
                 return None
             
-            # 최근 30일 데이터 사용
-            recent_index = common_index[-30:]
+            # 최근 60일 데이터 사용
+            recent_index = common_index[-60:]
             
-            # EMA 데이터 정리
-            ema5_values = ema5_data.loc[recent_index, 'EMA']
-            ema20_values = ema20_data.loc[recent_index, 'EMA']
-            ema40_values = ema40_data.loc[recent_index, 'EMA']
-            
-            # 기본 EMA5/EMA20 크로스오버 감지 (더 확실한 방법)
             crossover_events = []
             
             for i in range(1, len(recent_index)):
@@ -370,29 +388,46 @@ class IndicatorService:
                 curr_date = recent_index[i]
                 
                 # 이전 상태
-                prev_ema5 = ema5_values.iloc[i-1]
-                prev_ema20 = ema20_values.iloc[i-1]
-                prev_ema40 = ema40_values.iloc[i-1]
+                prev_ema5 = ema5_data.loc[prev_date, 'EMA']
+                prev_ema20 = ema20_data.loc[prev_date, 'EMA']
+                prev_ema40 = ema40_data.loc[prev_date, 'EMA']
                 
                 # 현재 상태
-                curr_ema5 = ema5_values.iloc[i]
-                curr_ema20 = ema20_values.iloc[i]
-                curr_ema40 = ema40_values.iloc[i]
+                curr_ema5 = ema5_data.loc[curr_date, 'EMA']
+                curr_ema20 = ema20_data.loc[curr_date, 'EMA']
+                curr_ema40 = ema40_data.loc[curr_date, 'EMA']
                 
-                # 1. 기본 EMA5/EMA20 크로스오버 감지
-                basic_crossover = self._detect_basic_ema_crossover(prev_ema5, prev_ema20, curr_ema5, curr_ema20)
-                
-                if basic_crossover:
-                    # 2. 대순환 분석 추가
+                # 골든크로스: EMA5가 EMA20을 상향 돌파
+                if prev_ema5 <= prev_ema20 and curr_ema5 > curr_ema20:
+                    # 대순환 분석 추가
                     prev_state = self._classify_ema_state(prev_ema5, prev_ema20, prev_ema40)
                     curr_state = self._classify_ema_state(curr_ema5, curr_ema20, curr_ema40)
                     
-                    # 3. 정밀한 크로스오버 타입 감지
+                    # 정밀한 크로스오버 타입 감지
                     advanced_crossover = self._detect_crossover_type(prev_state, curr_state, prev_ema5, prev_ema20, prev_ema40, curr_ema5, curr_ema20, curr_ema40)
                     
                     crossover_events.append({
                         'date': curr_date,
-                        'type': advanced_crossover if advanced_crossover else basic_crossover,
+                        'type': advanced_crossover if advanced_crossover else "Golden Cross",
+                        'ema5': curr_ema5,
+                        'ema20': curr_ema20,
+                        'ema40': curr_ema40,
+                        'prev_state': prev_state,
+                        'curr_state': curr_state
+                    })
+                
+                # 데드크로스: EMA5가 EMA20을 하향 돌파
+                elif prev_ema5 >= prev_ema20 and curr_ema5 < curr_ema20:
+                    # 대순환 분석 추가
+                    prev_state = self._classify_ema_state(prev_ema5, prev_ema20, prev_ema40)
+                    curr_state = self._classify_ema_state(curr_ema5, curr_ema20, curr_ema40)
+                    
+                    # 정밀한 크로스오버 타입 감지
+                    advanced_crossover = self._detect_crossover_type(prev_state, curr_state, prev_ema5, prev_ema20, prev_ema40, curr_ema5, curr_ema20, curr_ema40)
+                    
+                    crossover_events.append({
+                        'date': curr_date,
+                        'type': advanced_crossover if advanced_crossover else "Dead Cross",
                         'ema5': curr_ema5,
                         'ema20': curr_ema20,
                         'ema40': curr_ema40,
@@ -403,7 +438,7 @@ class IndicatorService:
             # 가장 최근 크로스오버 반환
             if crossover_events:
                 return crossover_events[-1]
-            
+                
             return None
             
         except Exception as e:

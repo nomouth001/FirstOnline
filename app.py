@@ -7,6 +7,7 @@ from flask_login import LoginManager, current_user, login_required
 from config import SECRET_KEY, SESSION_TYPE, PERMANENT_SESSION_LIFETIME, LOGGING_ENABLED, SQLALCHEMY_DATABASE_URI, SQLALCHEMY_TRACK_MODIFICATIONS
 from models import db, User, StockList, Stock
 from utils.file_manager import get_stock_file_status
+from utils.memory_monitor import init_memory_monitoring
 
 # 로깅 설정을 가장 먼저 적용
 try:
@@ -119,6 +120,14 @@ with app.app_context():
             logger.info(f"기본 관리자 계정 생성 완료 (비밀번호: {'환경변수에서 설정' if os.getenv('ADMIN_PASSWORD') else '임시 비밀번호'})")
         else:
             logger.info("기본 관리자 계정이 이미 존재합니다")
+        
+        # 메모리 모니터링 초기화
+        try:
+            init_memory_monitoring()
+            logger.info("메모리 모니터링 초기화 완료")
+        except Exception as e:
+            logger.error(f"메모리 모니터링 초기화 오류: {e}")
+            
     except Exception as e:
         logger.error(f"데이터베이스 초기화 오류: {e}")
         # 에러가 발생해도 앱은 계속 실행

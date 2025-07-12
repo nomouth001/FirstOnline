@@ -227,12 +227,26 @@ class DatabaseSyncManager:
                 if 'newsletter_subscriptions' in data:
                     NewsletterSubscription.query.delete()
                     for ns_data in data['newsletter_subscriptions']:
+                        # send_time 필드 처리: "09:00:00" 형식의 시간 문자열
+                        send_time = None
+                        if ns_data.get('send_time'):
+                            try:
+                                # 단순 시간 형식 "HH:MM:SS"
+                                send_time = datetime.strptime(ns_data['send_time'], '%H:%M:%S').time()
+                            except ValueError:
+                                try:
+                                    # ISO 형식으로 시도
+                                    send_time = datetime.fromisoformat(ns_data['send_time']).time()
+                                except ValueError:
+                                    logger.warning(f"시간 형식 오류: {ns_data['send_time']}")
+                                    send_time = None
+                        
                         newsletter_sub = NewsletterSubscription(
                             id=ns_data['id'],
                             user_id=ns_data['user_id'],
                             is_active=ns_data.get('is_active', True),
                             frequency=ns_data.get('frequency', 'daily'),
-                            send_time=datetime.fromisoformat(ns_data['send_time']).time() if ns_data.get('send_time') else None,
+                            send_time=send_time,
                             include_charts=ns_data.get('include_charts', True),
                             include_summary=ns_data.get('include_summary', True),
                             include_technical_analysis=ns_data.get('include_technical_analysis', True),

@@ -148,6 +148,80 @@ def get_indicator_data_for_analysis(ticker):
         logging.error(f"[{ticker}] Error getting indicator data for analysis: {str(e)}")
         return None, None
 
+def analyze_ticker_with_fresh_data(ticker, display_date, charts, daily_b64, weekly_b64, monthly_b64, analysis_html_path):
+    """
+    새로운 데이터를 다운로드하고 지표를 계산하여 분석하는 함수
+    """
+    logging.info(f"[{ticker}] Starting fresh data download and analysis...")
+    
+    try:
+        data_end_date = datetime.strptime(display_date, "%Y-%m-%d")
+        data_fetch_start_date = data_end_date - timedelta(days=5*365 + 60)  # 5년 + 여유분
+
+        # 새로운 데이터 다운로드
+        from services.market_data_service import download_stock_data_with_fallback
+        logging.info(f"[{ticker}] Downloading fresh stock data...")
+        stock_data_full = download_stock_data_with_fallback(ticker, data_fetch_start_date, data_end_date + timedelta(days=1))
+        
+        if stock_data_full.empty:
+            raise ValueError(f"No stock data found for {ticker}")
+
+        # 시간대 정규화
+        if stock_data_full.index.tz is not None:
+            stock_data_full.index = stock_data_full.index.tz_localize(None)
+
+        # 날짜 필터링
+        stock_data = stock_data_full[stock_data_full.index <= data_end_date]
+        if stock_data.empty:
+            raise ValueError(f"Filtered stock data up to {data_end_date.strftime('%Y-%m-%d')} is empty.")
+
+        logging.info(f"[{ticker}] Fresh data downloaded. Shape: {stock_data.shape}")
+
+        # 새로운 지표 계산 및 저장
+        logging.info(f"[{ticker}] Calculating and saving new indicators...")
+        indicator_results = indicator_service.process_all_indicators(ticker, stock_data)
+        
+        if not indicator_results:
+            logging.error(f"[{ticker}] Failed to calculate indicators")
+            return {
+                "analysis_gemini": "[지표 계산 실패]",
+                "analysis_openai": "[지표 계산 실패]", 
+                "summary_gemini": "지표 계산 실패",
+                "summary_openai": "지표 계산 실패",
+                "success": False
+            }, 500
+
+        # 새로 계산된 지표 데이터 읽기
+        daily_ohlcv = indicator_service.get_latest_indicator_data(ticker, "ohlcv", "d", rows=45)
+        weekly_ohlcv = indicator_service.get_latest_indicator_data(ticker, "ohlcv", "w", rows=45)
+        monthly_ohlcv = indicator_service.get_latest_indicator_data(ticker, "ohlcv", "m", rows=45)
+        
+        if daily_ohlcv is None or weekly_ohlcv is None or monthly_ohlcv is None:
+            logging.error(f"[{ticker}] Failed to read newly calculated indicators")
+            return {
+                "analysis_gemini": "[새로 계산된 지표 읽기 실패]",
+                "analysis_openai": "[새로 계산된 지표 읽기 실패]",
+                "summary_gemini": "새로 계산된 지표 읽기 실패", 
+                "summary_openai": "새로 계산된 지표 읽기 실패",
+                "success": False
+            }, 500
+
+        logging.info(f"[{ticker}] Fresh indicators calculated successfully")
+        logging.info(f"[{ticker}] Daily: {len(daily_ohlcv)} rows, Weekly: {len(weekly_ohlcv)} rows, Monthly: {len(monthly_ohlcv)} rows")
+
+        # 기존 분석 로직과 동일하게 진행 (저장된 데이터 사용 부분부터)
+        return continue_analysis_with_indicator_data(ticker, display_date, charts, daily_b64, weekly_b64, monthly_b64, analysis_html_path, daily_ohlcv, weekly_ohlcv, monthly_ohlcv)
+        
+    except Exception as e:
+        logging.error(f"[{ticker}] Error in fresh data analysis: {str(e)}")
+        return {
+            "analysis_gemini": f"[새로운 데이터 분석 오류: {str(e)}]",
+            "analysis_openai": f"[새로운 데이터 분석 오류: {str(e)}]",
+            "summary_gemini": f"새로운 데이터 분석 오류: {str(e)}",
+            "summary_openai": f"새로운 데이터 분석 오류: {str(e)}",
+            "success": False
+        }, 500
+
 def analyze_ticker_fallback_calculation(ticker, display_date, charts, daily_b64, weekly_b64, monthly_b64, analysis_html_path):
     """
     저장된 지표 파일이 없을 때 기존 방식으로 계산하는 fallback 함수
@@ -360,24 +434,97 @@ def analyze_ticker_internal_logic(ticker, analysis_html_path):
     weekly_b64 = ""
     monthly_b64 = ""
 
-    # 공통 프롬프트 생성 (저장된 지표 파일에서 데이터 읽기)
+    # 시간대별 데이터 처리 로직
     try:
-        logging.info(f"[{ticker}] Starting data preparation using saved indicator files...")
+        logging.info(f"[{ticker}] Determining data processing strategy based on market hours...")
         data_end_date = datetime.strptime(display_date, "%Y-%m-%d")
-
-        # 저장된 지표 파일에서 데이터 읽기
-        daily_ohlcv = indicator_service.get_latest_indicator_data(ticker, "ohlcv", "d", rows=45)
-        weekly_ohlcv = indicator_service.get_latest_indicator_data(ticker, "ohlcv", "w", rows=45)
-        monthly_ohlcv = indicator_service.get_latest_indicator_data(ticker, "ohlcv", "m", rows=45)
         
-        if daily_ohlcv is None or weekly_ohlcv is None or monthly_ohlcv is None:
-            logging.warning(f"[{ticker}] Saved indicator files not found, falling back to traditional calculation...")
-            # 기존 방식으로 폴백
-            return analyze_ticker_fallback_calculation(ticker, display_date, charts, daily_b64, weekly_b64, monthly_b64, analysis_html_path)
+        # 한국 주식 여부 확인
+        is_korean_stock = ticker.endswith('.KS') or ticker.endswith('.KQ')
+        
+        # 현재 시간 확인
+        import pytz
+        
+        if is_korean_stock:
+            # 한국 주식: KST 기준
+            kst = pytz.timezone('Asia/Seoul')
+            current_time = datetime.now(kst)
+            market_open_time = current_time.replace(hour=9, minute=0, second=0, microsecond=0)
+            market_close_time = current_time.replace(hour=15, minute=30, second=0, microsecond=0)
+            is_market_hours = market_open_time <= current_time <= market_close_time
+            logging.info(f"[{ticker}] Korean stock - Current KST: {current_time.strftime('%H:%M:%S')}, Market hours: {is_market_hours}")
+        else:
+            # 미국 주식: EST 기준
+            est = pytz.timezone('US/Eastern')
+            current_time = datetime.now(est)
+            market_open_time = current_time.replace(hour=9, minute=30, second=0, microsecond=0)
+            market_close_time = current_time.replace(hour=16, minute=0, second=0, microsecond=0)
+            is_market_hours = market_open_time <= current_time <= market_close_time
+            logging.info(f"[{ticker}] US stock - Current EST: {current_time.strftime('%H:%M:%S')}, Market hours: {is_market_hours}")
+        
+        # 데이터 처리 전략 결정
+        should_download_new_data = False
+        
+        if is_market_hours:
+            # 장중 시간대: 항상 새로 데이터 다운로드
+            logging.info(f"[{ticker}] Market hours detected - will download fresh data")
+            should_download_new_data = True
+        else:
+            # 장외 시간대: 기존 저장된 데이터 우선 사용
+            logging.info(f"[{ticker}] After-hours detected - will try to use existing saved data")
+            should_download_new_data = False
+        
+        if should_download_new_data:
+            # 새로 데이터 다운로드 + 지표 계산
+            logging.info(f"[{ticker}] Downloading fresh data and calculating new indicators...")
+            return analyze_ticker_with_fresh_data(ticker, display_date, charts, daily_b64, weekly_b64, monthly_b64, analysis_html_path)
+        else:
+            # 기존 저장된 데이터 사용
+            logging.info(f"[{ticker}] Attempting to use existing saved indicator data...")
+            
+            # 저장된 지표 파일에서 데이터 읽기
+            daily_ohlcv = indicator_service.get_latest_indicator_data(ticker, "ohlcv", "d", rows=45)
+            weekly_ohlcv = indicator_service.get_latest_indicator_data(ticker, "ohlcv", "w", rows=45)
+            monthly_ohlcv = indicator_service.get_latest_indicator_data(ticker, "ohlcv", "m", rows=45)
+            
+            if daily_ohlcv is None or weekly_ohlcv is None or monthly_ohlcv is None:
+                logging.warning(f"[{ticker}] Saved indicator files not found, falling back to fresh data download...")
+                # 저장된 데이터가 없으면 새로 다운로드
+                return analyze_ticker_with_fresh_data(ticker, display_date, charts, daily_b64, weekly_b64, monthly_b64, analysis_html_path)
 
-        logging.info(f"[{ticker}] Successfully loaded indicator data from saved files")
-        logging.info(f"[{ticker}] Daily: {len(daily_ohlcv)} rows, Weekly: {len(weekly_ohlcv)} rows, Monthly: {len(monthly_ohlcv)} rows")
+            logging.info(f"[{ticker}] Successfully loaded indicator data from saved files")
+            logging.info(f"[{ticker}] Daily: {len(daily_ohlcv)} rows, Weekly: {len(weekly_ohlcv)} rows, Monthly: {len(monthly_ohlcv)} rows")
+            
+                                    # 저장된 데이터로 분석 계속
+            return continue_analysis_with_indicator_data(ticker, display_date, charts, daily_b64, weekly_b64, monthly_b64, analysis_html_path, daily_ohlcv, weekly_ohlcv, monthly_ohlcv)
+    
+    except Exception as e:
+        logging.error(f"[{ticker}] Error in analysis: {str(e)}")
+        return {
+            "analysis_gemini": f"[분석 오류: {str(e)}]",
+            "analysis_openai": f"[분석 오류: {str(e)}]",
+            "summary_gemini": f"분석 오류: {str(e)}",
+            "summary_openai": f"분석 오류: {str(e)}",
+            "success": False
+        }, 500
+    
+    except Exception as e:
+        logging.error(f"[{ticker}] Error in analysis: {str(e)}")
+        return {
+            "analysis_gemini": f"[분석 오류: {str(e)}]",
+            "analysis_openai": f"[분석 오류: {str(e)}]",
+            "summary_gemini": f"분석 오류: {str(e)}",
+            "summary_openai": f"분석 오류: {str(e)}",
+            "success": False
+        }, 500
 
+def continue_analysis_with_indicator_data(ticker, display_date, charts, daily_b64, weekly_b64, monthly_b64, analysis_html_path, daily_ohlcv, weekly_ohlcv, monthly_ohlcv):
+    """
+    이미 준비된 지표 데이터로 분석을 계속하는 함수
+    """
+    data_end_date = datetime.strptime(display_date, "%Y-%m-%d")
+
+    try:
         # 각 지표 데이터 로드
         daily_ema5 = indicator_service.get_latest_indicator_data(ticker, "ema5", "d", rows=45)
         daily_ema20 = indicator_service.get_latest_indicator_data(ticker, "ema20", "d", rows=45)
@@ -574,12 +721,20 @@ def analyze_ticker_internal_logic(ticker, analysis_html_path):
         # 현재 종가는 OHLCV 데이터에서 추출
         current_close = safe_last_value(daily_ohlcv['Close'])
 
+        # OHLCV 데이터 포인트 추출
+        daily_ohlcv_points = get_ohlcv_data_points(daily_ohlcv, 30)
+        weekly_ohlcv_points = get_ohlcv_data_points(weekly_ohlcv, 30)
+        monthly_ohlcv_points = get_ohlcv_data_points(monthly_ohlcv, 30)
+
+        # OHLCV 데이터를 텍스트로 포맷팅
+        daily_ohlcv_data = format_ohlcv_data(daily_ohlcv_points, "Daily")
+        weekly_ohlcv_data = format_ohlcv_data(weekly_ohlcv_points, "Weekly")
+        monthly_ohlcv_data = format_ohlcv_data(monthly_ohlcv_points, "Monthly")
+
         # 프롬프트 템플릿 로드
         prompt_template = load_ai_prompt_template()
         if prompt_template is None:
             raise ValueError("AI 프롬프트 템플릿을 로드할 수 없습니다.")
-        
-        # 저장된 지표 파일에서 OHLCV 데이터를 이미 추출했으므로 중복 제거
 
         # 프롬프트 템플릿에 OHLCV 데이터만 삽입 (기술지표는 AI가 계산)
         common_prompt = prompt_template.format(

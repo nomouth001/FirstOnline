@@ -1,69 +1,71 @@
 import os
 import logging
+import time
+import signal
+import threading
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 import google.generativeai as genai
 from config import GOOGLE_API_KEY, GEMINI_MODEL_VERSION, GEMINI_TEXT_MODEL_VERSION
 
-def perform_gemini_analysis(ticker, common_prompt, daily_b64, weekly_b64, monthly_b64):
-    """Gemini API를 사용한 분석을 수행합니다."""
-    analysis = "[Gemini 분석 실패: 분석을 시작할 수 없습니다.]"
-    succeeded = False
+class TimeoutError(Exception):
+    """타임아웃 예외 클래스"""
+    pass
+
+def timeout_handler(signum, frame):
+    """타임아웃 시그널 핸들러"""
+    raise TimeoutError("AI 분석 타임아웃")
+
+def perform_gemini_analysis_with_timeout(ticker, common_prompt, daily_b64, weekly_b64, monthly_b64, timeout_seconds=90):
+    """타임아웃이 적용된 Gemini API 분석"""
     
-    try:
-        if not GOOGLE_API_KEY:
-            raise ValueError("Gemini API 키가 설정되지 않았습니다.")
-        
-        genai.configure(api_key=GOOGLE_API_KEY)
-        model = genai.GenerativeModel(GEMINI_MODEL_VERSION)
-        
-        # 이미지가 있는 경우에만 이미지 분석 수행 (주석처리: 차트 이미지 전송 비활성화)
-        # if daily_b64 and weekly_b64 and monthly_b64:
-        #     # 일봉 차트 이미지로 분석
-        #     daily_image_data = {
-        #         "mime_type": "image/png",
-        #         "data": daily_b64
-        #     }
-        #     
-        #     prompt_with_daily = f"{common_prompt}\n\n위의 지표 데이터와 함께 다음 일봉 차트 이미지를 분석해주세요."
-        #     response_daily = model.generate_content([prompt_with_daily, daily_image_data])
-        #     
-        #     if response_daily.text:
-        #         analysis = response_daily.text
-        #         succeeded = True
-        #         logging.info(f"Gemini analysis completed successfully for {ticker}")
-        #     else:
-        #         analysis = "[Gemini 분석 실패: 응답이 비어있습니다.]"
-        #         
-        # else:
-        #     # 이미지가 없는 경우 텍스트만으로 분석
-        #     model_text = genai.GenerativeModel(GEMINI_TEXT_MODEL_VERSION)
-        #     response = model_text.generate_content(common_prompt)
-        #     
-        #     if response.text:
-        #         analysis = response.text
-        #         succeeded = True
-        #         logging.info(f"Gemini text analysis completed successfully for {ticker}")
-        #     else:
-        #         analysis = "[Gemini 분석 실패: 응답이 비어있습니다.]"
-        
-        # 차트 이미지 전송 비활성화 - 텍스트만으로 분석 (OHLCV 데이터와 기술지표 포함)
+    def _perform_analysis():
+        """실제 분석 수행 함수"""
+        try:
+            if not GOOGLE_API_KEY:
+                raise ValueError("Gemini API 키가 설정되지 않았습니다.")
+            
+            genai.configure(api_key=GOOGLE_API_KEY)
             model_text = genai.GenerativeModel(GEMINI_TEXT_MODEL_VERSION)
+            
+            logging.info(f"[{ticker}] Gemini API 분석 시작 - 타임아웃: {timeout_seconds}초")
+            start_time = time.time()
+            
+            # Gemini API 호출
             response = model_text.generate_content(common_prompt)
             
+            api_time = time.time() - start_time
+            logging.info(f"[{ticker}] Gemini API 분석 완료 - 소요시간: {api_time:.2f}초")
+            
             if response.text:
-                analysis = response.text
-                succeeded = True
-                logging.info(f"Gemini text analysis completed successfully for {ticker}")
+                return response.text, True
             else:
-                analysis = "[Gemini 분석 실패: 응답이 비어있습니다.]"
+                return "[Gemini 분석 실패: 응답이 비어있습니다.]", False
                 
-    except ValueError as val_e:
-        logging.exception(f"Configuration or data error for Gemini API for {ticker}: {val_e}")
-        analysis = f"[Gemini 분석 실패] 설정 또는 데이터 오류: {val_e}"
-    except Exception as e:
-        logging.exception(f"Gemini analysis failed for {ticker}")
-        analysis = f"[Gemini 분석 실패] 분석 중 알 수 없는 오류 발생: {e}"
+        except Exception as e:
+            logging.error(f"[{ticker}] Gemini 분석 중 오류: {e}")
+            return f"[Gemini 분석 실패] 분석 중 오류 발생: {e}", False
     
-    return analysis, succeeded
+    # ThreadPoolExecutor를 사용한 타임아웃 처리
+    try:
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(_perform_analysis)
+            
+            try:
+                # 타임아웃 적용
+                analysis, succeeded = future.result(timeout=timeout_seconds)
+                return analysis, succeeded
+                
+            except FutureTimeoutError:
+                logging.error(f"[{ticker}] Gemini API 분석 타임아웃 ({timeout_seconds}초 초과)")
+                return f"[Gemini 분석 타임아웃] 분석 시간이 {timeout_seconds}초를 초과했습니다.", False
+                
+    except Exception as e:
+        logging.error(f"[{ticker}] Gemini 분석 실행 중 오류: {e}")
+        return f"[Gemini 분석 실패] 실행 중 오류 발생: {e}", False
+
+def perform_gemini_analysis(ticker, common_prompt, daily_b64, weekly_b64, monthly_b64):
+    """Gemini API를 사용한 분석을 수행합니다. (타임아웃 처리 포함)"""
+    return perform_gemini_analysis_with_timeout(ticker, common_prompt, daily_b64, weekly_b64, monthly_b64, timeout_seconds=90)
 
 def perform_openai_analysis(ticker, common_prompt, daily_b64, weekly_b64, monthly_b64):
     """OpenAI API를 사용한 분석을 수행합니다. (현재 비활성화)"""
@@ -91,4 +93,32 @@ def _extract_summary_from_analysis(analysis_text):
             return "요약 없음."
     except Exception as e:
         logging.error(f"Error extracting summary: {e}")
-        return "요약 추출 실패." 
+        return "요약 추출 실패."
+
+def check_ai_service_health():
+    """AI 서비스 상태 확인"""
+    try:
+        if not GOOGLE_API_KEY:
+            return False, "Gemini API 키가 설정되지 않았습니다."
+        
+        genai.configure(api_key=GOOGLE_API_KEY)
+        model = genai.GenerativeModel(GEMINI_TEXT_MODEL_VERSION)
+        
+        # 간단한 테스트 요청
+        test_prompt = "안녕하세요. 테스트 메시지입니다."
+        
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(model.generate_content, test_prompt)
+            
+            try:
+                response = future.result(timeout=30)  # 30초 타임아웃
+                if response.text:
+                    return True, "AI 서비스 정상"
+                else:
+                    return False, "AI 서비스 응답 없음"
+                    
+            except FutureTimeoutError:
+                return False, "AI 서비스 타임아웃"
+                
+    except Exception as e:
+        return False, f"AI 서비스 오류: {e}" 

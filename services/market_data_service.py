@@ -8,6 +8,7 @@ import time
 import requests
 import pandas as pd
 import yfinance as yf
+import FinanceDataReader as fdr
 from datetime import datetime, timedelta
 from config import ALTERNATIVE_APIS
 
@@ -197,6 +198,58 @@ def convert_ticker_for_alpha_vantage(ticker):
     # 별도 변환 없이 그대로 사용
     return ticker
 
+def download_from_finance_data_reader(ticker, start_date, end_date, max_retries=3):
+    """
+    FinanceDataReader에서 데이터 다운로드
+    """
+    logging.info(f"[{ticker}] Downloading from FinanceDataReader...")
+    
+    for attempt in range(max_retries):
+        try:
+            # 한국 종목의 경우 .KS, .KQ 접미사 제거
+            fdr_ticker = ticker
+            if ticker.endswith('.KS') or ticker.endswith('.KQ'):
+                fdr_ticker = ticker[:-3]
+                logging.info(f"[{ticker}] Converting to FinanceDataReader format: {fdr_ticker}")
+            
+            # FinanceDataReader로 데이터 다운로드
+            df = fdr.DataReader(fdr_ticker, start_date, end_date)
+            
+            if not df.empty:
+                # 컬럼명 정규화 (yfinance 형식에 맞게)
+                if 'Adj Close' not in df.columns and 'Close' in df.columns:
+                    df['Adj Close'] = df['Close']
+                
+                # 필요한 컬럼만 선택
+                required_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+                available_columns = [col for col in required_columns if col in df.columns]
+                
+                if available_columns:
+                    df_filtered = df[available_columns].copy()
+                    logging.info(f"[{ticker}] FinanceDataReader download successful. Shape: {df_filtered.shape}")
+                    return df_filtered
+                else:
+                    logging.warning(f"[{ticker}] No required columns found in FinanceDataReader data")
+                    if attempt < max_retries - 1:
+                        time.sleep(2)
+                        continue
+                    return pd.DataFrame()
+            else:
+                logging.warning(f"[{ticker}] Empty DataFrame from FinanceDataReader")
+                if attempt < max_retries - 1:
+                    time.sleep(2)
+                    continue
+                return pd.DataFrame()
+                
+        except Exception as e:
+            logging.error(f"[{ticker}] FinanceDataReader download error (attempt {attempt + 1}): {e}")
+            if attempt < max_retries - 1:
+                time.sleep(2)
+                continue
+            return pd.DataFrame()
+    
+    return pd.DataFrame()
+
 def download_from_alpha_vantage(ticker, max_retries=3):
     """
     Alpha Vantage API에서 데이터 다운로드
@@ -309,20 +362,20 @@ def download_from_yahoo_finance(ticker, start_date, end_date, max_retries=3, del
 
 def download_stock_data_with_fallback(ticker, start_date, end_date):
     """
-    미국 종목: Twelve Data → Alpha Vantage → Yahoo Finance → 포기
-    한국 종목: Yahoo Finance → Alpha Vantage (기존 방식 유지)
+    미국 종목: Yahoo Finance → Twelve Data → Alpha Vantage → FinanceDataReader → 포기
+    한국 종목: Yahoo Finance → FinanceDataReader → 포기
     """
     # 한국 종목인지 확인
     if is_korean_stock(ticker):
-        logging.info(f"[{ticker}] Korean stock detected, using existing fallback logic")
+        logging.info(f"[{ticker}] Korean stock detected, using Yahoo Finance → FinanceDataReader fallback")
         return download_stock_data_korean_fallback(ticker, start_date, end_date)
     else:
-        logging.info(f"[{ticker}] US stock detected, using Twelve Data priority fallback")
+        logging.info(f"[{ticker}] US stock detected, using Yahoo Finance priority fallback")
         return download_stock_data_us_fallback(ticker, start_date, end_date)
 
 def download_stock_data_korean_fallback(ticker, start_date, end_date):
     """
-    한국 종목: Yahoo Finance만 시도, 429 오류 시 바로 포기
+    한국 종목: Yahoo Finance → FinanceDataReader → 포기
     """
     # 1. Yahoo Finance 시도
     logging.info(f"[{ticker}] Trying Yahoo Finance for Korean stock...")
@@ -332,25 +385,47 @@ def download_stock_data_korean_fallback(ticker, start_date, end_date):
             logging.info(f"[{ticker}] Yahoo Finance successful")
             return df
     except RateLimitError as e:
-        # 429 에러 시 바로 포기
-        logging.error(f"[{ticker}] ❌ 종목분석 진행불가: Yahoo Finance rate limit (429 error)")
-        logging.error(f"[{ticker}] Rate limit details: {e}")
-        return pd.DataFrame()
+        # 429 에러 시 FinanceDataReader로 넘어감
+        logging.warning(f"[{ticker}] Yahoo Finance rate limit (429), switching to FinanceDataReader")
+        logging.warning(f"[{ticker}] Rate limit details: {e}")
     except Exception as e:
-        # 다른 에러의 경우에도 포기 (Alpha Vantage 폴백 제거)
-        logging.error(f"[{ticker}] ❌ 종목분석 진행불가: Yahoo Finance failed: {e}")
-        return pd.DataFrame()
+        # 다른 에러의 경우에도 FinanceDataReader로 넘어감
+        logging.warning(f"[{ticker}] Yahoo Finance failed: {e}")
     
-    # 빈 데이터인 경우
-    logging.error(f"[{ticker}] ❌ 종목분석 진행불가: 데이터 없음")
+    # 2. FinanceDataReader 시도
+    logging.info(f"[{ticker}] Trying FinanceDataReader for Korean stock...")
+    df = download_from_finance_data_reader(ticker, start_date, end_date)
+    if not df.empty:
+        logging.info(f"[{ticker}] FinanceDataReader successful. Final shape: {df.shape}")
+        return df
+    else:
+        logging.info(f"[{ticker}] FinanceDataReader failed")
+    
+    # 3. 모든 API 실패
+    logging.error(f"[{ticker}] ❌ 종목분석 진행불가: 모든 데이터 소스 실패")
     return pd.DataFrame()
 
 def download_stock_data_us_fallback(ticker, start_date, end_date):
     """
-    미국 종목: Twelve Data → Alpha Vantage → Yahoo Finance → 포기
+    미국 종목: Yahoo Finance → Twelve Data → Alpha Vantage → FinanceDataReader → 포기
     """
-    # 1. Twelve Data 시도
-    logging.info(f"[{ticker}] Trying Twelve Data first...")
+    # 1. Yahoo Finance 시도
+    logging.info(f"[{ticker}] Trying Yahoo Finance first...")
+    try:
+        df = download_from_yahoo_finance(ticker, start_date, end_date, max_retries=2, delay=5)
+        if not df.empty:
+            logging.info(f"[{ticker}] Yahoo Finance successful")
+            return df
+    except RateLimitError as e:
+        # 429 에러 시 바로 다음 소스로 넘어감 (기다리거나 재시도 안함)
+        logging.warning(f"[{ticker}] Yahoo Finance rate limit (429), switching to Twelve Data")
+        logging.warning(f"[{ticker}] Rate limit details: {e}")
+    except Exception as e:
+        # 다른 에러는 기존 알고리즘 유지 (재시도 등)
+        logging.warning(f"[{ticker}] Yahoo Finance failed: {e}")
+    
+    # 2. Twelve Data 폴백
+    logging.info(f"[{ticker}] Trying Twelve Data...")
     df = download_from_twelve_data(ticker)
     if not df.empty:
         # 요청된 날짜 범위로 필터링
@@ -360,7 +435,7 @@ def download_stock_data_us_fallback(ticker, start_date, end_date):
     else:
         logging.info(f"[{ticker}] Twelve Data failed, trying Alpha Vantage...")
     
-    # 2. Alpha Vantage 폴백
+    # 3. Alpha Vantage 시도
     df = download_from_alpha_vantage(ticker)
     if not df.empty:
         # 요청된 날짜 범위로 필터링
@@ -368,23 +443,17 @@ def download_stock_data_us_fallback(ticker, start_date, end_date):
         logging.info(f"[{ticker}] Alpha Vantage successful. Final shape: {df.shape}")
         return df
     else:
-        logging.info(f"[{ticker}] Alpha Vantage failed, trying Yahoo Finance...")
+        logging.info(f"[{ticker}] Alpha Vantage failed, trying FinanceDataReader...")
     
-    # 3. Yahoo Finance 마지막 시도
-    try:
-        df = download_from_yahoo_finance(ticker, start_date, end_date, max_retries=2, delay=5)
-        if not df.empty:
-            logging.info(f"[{ticker}] Yahoo Finance successful")
-            return df
-    except RateLimitError as e:
-        # 429 에러 시 종목분석 진행불가
-        logging.error(f"[{ticker}] ❌ 종목분석 진행불가: Yahoo Finance rate limit (429 error)")
-        logging.error(f"[{ticker}] Rate limit details: {e}")
-        return pd.DataFrame()
-    except Exception as e:
-        logging.warning(f"[{ticker}] Yahoo Finance failed: {e}")
+    # 4. FinanceDataReader 마지막 시도
+    df = download_from_finance_data_reader(ticker, start_date, end_date)
+    if not df.empty:
+        logging.info(f"[{ticker}] FinanceDataReader successful. Final shape: {df.shape}")
+        return df
+    else:
+        logging.info(f"[{ticker}] FinanceDataReader failed")
     
-    # 4. 모든 API 실패
+    # 5. 모든 API 실패
     logging.error(f"[{ticker}] ❌ 종목분석 진행불가: 모든 데이터 소스 실패")
     return pd.DataFrame()
 

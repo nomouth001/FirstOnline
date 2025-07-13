@@ -87,7 +87,8 @@ echo -e "${YELLOW}🔄 서비스 재시작 중...${NC}"
 echo -e "${BLUE}🛑 기존 프로세스 종료 중...${NC}"
 pkill -f "python app.py" || true
 pkill -f "celery worker" || true
-sleep 2
+pkill -f "gunicorn" || true  # 모든 Gunicorn 프로세스 확실히 종료
+sleep 5  # 프로세스가 완전히 종료될 때까지 충분히 대기
 
 # Celery 워커 시작 (메모리 최적화 - 워커 수 1개로 제한)
 echo -e "${BLUE}🌱 Celery 워커 시작 (메모리 최적화)...${NC}"
@@ -95,7 +96,7 @@ chmod +x celery_start.sh
 ./celery_start.sh
 echo -e "${GREEN}✅ Celery 워커 시작 완료${NC}"
 
-# systemd 서비스 재시작 시도
+# systemd 서비스 재시작 시도 (Gunicorn은 여기서만 시작)
 if systemctl is-active --quiet newsletter 2>/dev/null; then
     echo -e "${BLUE}🔄 systemd 서비스 재시작 중...${NC}"
     sudo systemctl restart newsletter
@@ -107,12 +108,12 @@ elif systemctl is-active --quiet newsletter-app 2>/dev/null; then
 elif command -v pm2 &> /dev/null; then
     # PM2 재시작 시도
     echo -e "${BLUE}🔄 PM2 서비스 재시작 중...${NC}"
-    pm2 restart newsletter-app || pm2 start app.py --name newsletter-app --interpreter python3
+    pm2 restart newsletter-app || pm2 start "gunicorn -c gunicorn_config.py app:app" --name newsletter-app
     echo -e "${GREEN}✅ PM2 서비스 재시작 완료${NC}"
 else
-    # 수동 재시작
+    # 수동 재시작 (Gunicorn 설정 파일 사용)
     echo -e "${YELLOW}⚠️ 수동으로 앱을 재시작합니다...${NC}"
-    nohup python app.py > logs/app.log 2>&1 &
+    nohup gunicorn -c gunicorn_config.py app:app > logs/app.log 2>&1 &
     echo -e "${GREEN}✅ 앱 재시작 완료${NC}"
 fi
 

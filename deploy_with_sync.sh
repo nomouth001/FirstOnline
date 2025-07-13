@@ -111,32 +111,49 @@ fi
 # 6. 정적 파일 수집 (필요시)
 echo -e "${YELLOW}📁 정적 파일 처리 중...${NC}"
 mkdir -p static/charts static/analysis static/summaries static/debug static/memos static/multi_summaries
+mkdir -p logs
 echo -e "${GREEN}✅ 정적 파일 처리 완료${NC}"
 
 # 7. 서비스 재시작
 echo -e "${YELLOW}🔄 서비스 재시작 중...${NC}"
 
+# 기존 프로세스 종료 (안전하게)
+echo -e "${BLUE}🛑 기존 프로세스 종료 중...${NC}"
+pkill -f "python app.py" || true
+pkill -f "celery worker" || true
+pkill -f "gunicorn" || true  # 모든 Gunicorn 프로세스 확실히 종료
+sleep 5  # 프로세스가 완전히 종료될 때까지 충분히 대기
+
+# Celery 워커 시작 (메모리 최적화 - 워커 수 1개로 제한)
+echo -e "${BLUE}🌱 Celery 워커 시작 (메모리 최적화)...${NC}"
+chmod +x celery_start.sh
+./celery_start.sh
+echo -e "${GREEN}✅ Celery 워커 시작 완료${NC}"
+
 # systemd 서비스 재시작 시도
-if systemctl is-active --quiet newsletter-app; then
+if systemctl is-active --quiet newsletter-app 2>/dev/null; then
+    echo -e "${BLUE}🔄 systemd 서비스 재시작 중...${NC}"
     sudo systemctl restart newsletter-app
     echo -e "${GREEN}✅ systemd 서비스 재시작 완료${NC}"
-elif systemctl is-active --quiet newsletter; then
+elif systemctl is-active --quiet newsletter 2>/dev/null; then
+    echo -e "${BLUE}🔄 systemd 서비스 재시작 중...${NC}"
     sudo systemctl restart newsletter
     echo -e "${GREEN}✅ systemd 서비스 재시작 완료${NC}"
 elif command -v pm2 &> /dev/null; then
     # PM2 재시작 시도
-    pm2 restart newsletter-app || pm2 start app.py --name newsletter-app
+    echo -e "${BLUE}🔄 PM2 서비스 재시작 중...${NC}"
+    pm2 restart newsletter-app || pm2 start "gunicorn -c gunicorn_config.py app:app" --name newsletter-app
     echo -e "${GREEN}✅ PM2 서비스 재시작 완료${NC}"
 else
-    # 수동 재시작
+    # 수동 재시작 (Gunicorn 설정 파일 사용)
     echo -e "${YELLOW}⚠️ 수동으로 앱을 재시작합니다...${NC}"
-    pkill -f "python app.py" || true
-    nohup python app.py > app.log 2>&1 &
+    nohup gunicorn -c gunicorn_config.py app:app > logs/app.log 2>&1 &
     echo -e "${GREEN}✅ 앱 재시작 완료${NC}"
 fi
 
 # nginx 재시작 (있는 경우)
-if systemctl is-active --quiet nginx; then
+if systemctl is-active --quiet nginx 2>/dev/null; then
+    echo -e "${BLUE}🔄 Nginx 재시작 중...${NC}"
     sudo systemctl restart nginx
     echo -e "${GREEN}✅ Nginx 재시작 완료${NC}"
 fi
@@ -151,7 +168,7 @@ fi
 
 echo -e "${GREEN}🎉 배포 완료!${NC}"
 echo -e "${YELLOW}📝 사용 가능한 명령어:${NC}"
-echo -e "${YELLOW}  로그 확인: tail -f app.log${NC}"
+echo -e "${YELLOW}  로그 확인: tail -f logs/app.log${NC}"
 echo -e "${YELLOW}  서비스 상태: systemctl status newsletter${NC}"
 echo -e "${YELLOW}  DB 비교: python utils/db_sync.py compare${NC}"
 echo -e "${YELLOW}  DB 동기화: python utils/db_sync.py [sync-to-remote|sync-to-local]${NC}" 

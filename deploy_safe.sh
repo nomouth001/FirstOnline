@@ -86,7 +86,14 @@ echo -e "${YELLOW}🔄 서비스 재시작 중...${NC}"
 # 기존 프로세스 종료 (안전하게)
 echo -e "${BLUE}🛑 기존 프로세스 종료 중...${NC}"
 pkill -f "python app.py" || true
+pkill -f "celery worker" || true
 sleep 2
+
+# Celery 워커 시작 (메모리 최적화 - 워커 수 1개로 제한)
+echo -e "${BLUE}🌱 Celery 워커 시작 (메모리 최적화)...${NC}"
+chmod +x celery_start.sh
+./celery_start.sh
+echo -e "${GREEN}✅ Celery 워커 시작 완료${NC}"
 
 # systemd 서비스 재시작 시도
 if systemctl is-active --quiet newsletter 2>/dev/null; then

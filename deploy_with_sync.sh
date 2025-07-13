@@ -114,7 +114,73 @@ mkdir -p static/charts static/analysis static/summaries static/debug static/memo
 mkdir -p logs
 echo -e "${GREEN}✅ 정적 파일 처리 완료${NC}"
 
-# 7. 서비스 재시작
+# 7. Nginx 설정 확인 및 생성
+echo -e "${YELLOW}🔍 Nginx 설정 확인 중...${NC}"
+NGINX_CONFIG_DIR="/etc/nginx/sites-available"
+NGINX_ENABLED_DIR="/etc/nginx/sites-enabled"
+NGINX_CONFIG_FILE="${NGINX_CONFIG_DIR}/whatsnextstock.com"
+
+# Nginx 설치 여부 확인
+if ! command -v nginx &> /dev/null; then
+    echo -e "${YELLOW}⚠️ Nginx가 설치되어 있지 않습니다. 설정을 건너뜁니다.${NC}"
+else
+    # sites-available 디렉토리 확인
+    if [ ! -d "$NGINX_CONFIG_DIR" ]; then
+        echo -e "${YELLOW}⚠️ Nginx sites-available 디렉토리가 없습니다. 설정을 건너뜁니다.${NC}"
+    else
+        # 설정 파일 존재 여부 확인
+        if [ ! -f "$NGINX_CONFIG_FILE" ]; then
+            echo -e "${BLUE}ℹ️ Nginx 설정 파일이 없습니다. 새로 생성합니다.${NC}"
+            
+            # 설정 파일 생성
+            sudo tee "$NGINX_CONFIG_FILE" > /dev/null << EOF
+server {
+    listen 80;
+    server_name whatsnextstock.com www.whatsnextstock.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    location /static/ {
+        alias $(pwd)/static/;
+    }
+}
+EOF
+            echo -e "${GREEN}✅ Nginx 설정 파일 생성 완료${NC}"
+            
+            # sites-enabled에 심볼릭 링크 생성
+            if [ -d "$NGINX_ENABLED_DIR" ] && [ ! -f "${NGINX_ENABLED_DIR}/whatsnextstock.com" ]; then
+                sudo ln -s "$NGINX_CONFIG_FILE" "${NGINX_ENABLED_DIR}/whatsnextstock.com"
+                echo -e "${GREEN}✅ Nginx sites-enabled 심볼릭 링크 생성 완료${NC}"
+            fi
+        else
+            echo -e "${BLUE}ℹ️ 기존 Nginx 설정 파일 발견: $NGINX_CONFIG_FILE${NC}"
+            
+            # 포트 설정 확인 및 수정
+            if grep -q "proxy_pass.*:5000" "$NGINX_CONFIG_FILE"; then
+                echo -e "${YELLOW}⚠️ 포트 불일치 감지: Nginx는 5000 포트로 연결 시도, 구니콘은 8000 포트 사용${NC}"
+                echo -e "${BLUE}🔄 Nginx 설정 파일 수정 중...${NC}"
+                
+                # 백업 생성
+                sudo cp "$NGINX_CONFIG_FILE" "${NGINX_CONFIG_FILE}.bak"
+                
+                # 설정 파일 수정 (5000 -> 8000)
+                sudo sed -i 's/proxy_pass.*:5000/proxy_pass http:\/\/127.0.0.1:8000/g' "$NGINX_CONFIG_FILE"
+                
+                echo -e "${GREEN}✅ Nginx 설정 파일 수정 완료 (포트 5000 -> 8000)${NC}"
+            else
+                echo -e "${GREEN}✅ Nginx 포트 설정이 올바르거나 다른 형식을 사용 중입니다${NC}"
+            fi
+        fi
+    fi
+fi
+
+# 8. 서비스 재시작
 echo -e "${YELLOW}🔄 서비스 재시작 중...${NC}"
 
 # 기존 프로세스 종료 (안전하게)
@@ -152,13 +218,24 @@ else
 fi
 
 # nginx 재시작 (있는 경우)
-if systemctl is-active --quiet nginx 2>/dev/null; then
+if command -v nginx &> /dev/null && systemctl is-active --quiet nginx 2>/dev/null; then
     echo -e "${BLUE}🔄 Nginx 재시작 중...${NC}"
-    sudo systemctl restart nginx
-    echo -e "${GREEN}✅ Nginx 재시작 완료${NC}"
+    # 설정 테스트
+    if sudo nginx -t; then
+        sudo systemctl restart nginx
+        echo -e "${GREEN}✅ Nginx 재시작 완료${NC}"
+    else
+        echo -e "${RED}❌ Nginx 설정 테스트 실패${NC}"
+        if [ -f "${NGINX_CONFIG_FILE}.bak" ]; then
+            echo -e "${YELLOW}⚠️ 백업에서 Nginx 설정 복원 중...${NC}"
+            sudo cp "${NGINX_CONFIG_FILE}.bak" "$NGINX_CONFIG_FILE"
+            sudo systemctl restart nginx
+            echo -e "${YELLOW}⚠️ 원래 Nginx 설정으로 복원 완료${NC}"
+        fi
+    fi
 fi
 
-# 8. 배포 후 데이터베이스 상태 확인
+# 9. 배포 후 데이터베이스 상태 확인
 echo -e "${BLUE}📊 배포 후 데이터베이스 상태 확인 중...${NC}"
 if python utils/db_sync.py compare; then
     echo -e "${GREEN}✅ 배포 후 데이터베이스 확인 완료${NC}"

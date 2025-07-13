@@ -152,6 +152,10 @@ def _process_tickers_batch(tickers_to_process, user, progress_id, summary_filena
     logging.info(f"Starting batch processing ({batch_type}) for {total_tickers} tickers for '{progress_id}'")
 
     try:
+        # 서버 부하 방지를 위한 처리 제한 (최대 30개 종목만 연속 처리 후 재시작)
+        max_continuous_processing = 30
+        processing_count = 0
+        
         for i, ticker in enumerate(tickers_to_process, 1):
             if is_stop_requested():
                 logging.info(f"Stop requested. Stopping at ticker {i-1}/{total_tickers}")
@@ -164,7 +168,17 @@ def _process_tickers_batch(tickers_to_process, user, progress_id, summary_filena
             logging.info(f"Processing ticker {i}/{total_tickers}: {ticker} from list(s): {progress_id}")
             update_progress(ticker=ticker, processed=i, total=total_tickers, list_name=progress_id)
             
-            # 메모리 체크
+            # 서버 부하 방지: 연속 처리 종목 수 제한
+            processing_count += 1
+            if processing_count >= max_continuous_processing:
+                logging.info(f"서버 부하 방지를 위해 잠시 휴식 (처리 종목: {processing_count}개)")
+                time.sleep(30)  # 30초 휴식
+                processing_count = 0
+                
+                # 휴식 후 메모리 상태 로깅
+                log_memory_usage(f"배치 처리 휴식 후 - {ticker}")
+            
+            # 메모리 체크 (더 엄격하게)
             if not check_memory_before_analysis(ticker):
                 logging.error(f"[{ticker}] 메모리 부족으로 배치 처리 중단")
                 end_batch_tracking(progress_id, False, "메모리 부족")
@@ -188,10 +202,16 @@ def _process_tickers_batch(tickers_to_process, user, progress_id, summary_filena
                     if chart_result is None:
                         raise TimeoutError("Chart generation timed out")
                     
+                    # 종목 간 처리 간격 추가 (서버 부하 방지)
+                    time.sleep(2)
+                    
                     # 2. AI Analysis with timeout
                     analysis_result = safe_ai_analysis(ticker, AI_ANALYSIS_TIMEOUT)
                     if analysis_result is None:
                         raise TimeoutError("AI analysis timed out")
+
+                    # 분석 완료 후 짧은 휴식 (서버 부하 방지)
+                    time.sleep(3)
 
                     analysis_data, analysis_status_code = analysis_result
                     

@@ -35,9 +35,9 @@ class MemoryMonitor:
     """메모리 사용량 모니터링 클래스"""
     
     def __init__(self, 
-                 warning_threshold: float = 80.0,  # 경고 임계치 (%)
-                 critical_threshold: float = 90.0,  # 위험 임계치 (%)
-                 check_interval: int = 60):  # 체크 간격 (초)
+                 warning_threshold: float = 70.0,  # 경고 임계치 (%) - 80%에서 70%로 낮춤
+                 critical_threshold: float = 85.0,  # 위험 임계치 (%) - 90%에서 85%로 낮춤
+                 check_interval: int = 30):  # 체크 간격 (초) - 60초에서 30초로 단축
         self.warning_threshold = warning_threshold
         self.critical_threshold = critical_threshold
         self.check_interval = check_interval
@@ -216,15 +216,36 @@ def log_memory_usage(context: str = ""):
         logger.info(f"메모리 사용량: {memory_info}")
 
 def check_memory_before_analysis(ticker: str) -> bool:
-    """분석 전 메모리 체크"""
+    """분석 전 메모리 체크 (더 엄격한 기준 적용)"""
     monitor = get_memory_monitor()
     result = monitor.check_memory_usage()
     
-    if result['status'] == 'critical':
-        logger.error(f"[{ticker}] 메모리 부족으로 분석 중단: {result['stats']['memory_percent']:.1f}%")
+    # 메모리 사용량 통계
+    stats = result.get('stats', {})
+    memory_percent = stats.get('memory_percent', 100)  # 기본값을 100%로 설정하여 오류 시 안전하게 중단
+    process_memory = stats.get('process_memory_mb', 0)
+    
+    # 더 엄격한 기준으로 체크
+    if result['status'] == 'critical' or memory_percent > 85:
+        logger.error(f"[{ticker}] 메모리 부족으로 분석 중단: {memory_percent:.1f}%")
         return False
-    elif result['status'] == 'warning':
-        logger.warning(f"[{ticker}] 메모리 사용량 경고: {result['stats']['memory_percent']:.1f}%")
+    elif result['status'] == 'warning' or memory_percent > 70:
+        # 경고 상태에서도 프로세스 메모리가 높으면 중단
+        if process_memory > 400:  # 400MB 이상이면 중단 (기존 500MB)
+            logger.error(f"[{ticker}] 프로세스 메모리 과다로 분석 중단: {process_memory:.1f}MB")
+            return False
+        logger.warning(f"[{ticker}] 메모리 사용량 경고: {memory_percent:.1f}%, 프로세스: {process_memory:.1f}MB")
+    
+    # 시스템 상태 확인 (CPU 부하 체크)
+    try:
+        cpu_percent = psutil.cpu_percent(interval=0.5)
+        if cpu_percent > 90:  # CPU 사용률이 90% 이상이면 중단
+            logger.error(f"[{ticker}] CPU 과부하로 분석 중단: {cpu_percent:.1f}%")
+            return False
+        elif cpu_percent > 75:  # CPU 사용률이 75% 이상이면 경고
+            logger.warning(f"[{ticker}] CPU 사용률 높음: {cpu_percent:.1f}%")
+    except Exception as e:
+        logger.error(f"CPU 상태 확인 중 오류: {e}")
     
     return True
 

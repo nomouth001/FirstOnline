@@ -7,19 +7,23 @@ import os
 # 바인드 주소
 bind = "0.0.0.0:8000"
 
-# 워커 설정
-workers = multiprocessing.cpu_count() * 2 + 1  # CPU 코어 수 기반 워커 개수
+# 워커 설정 (Lightsail 환경에 맞게 최적화)
+# CPU 코어 수 * 2 + 1 대신 더 적은 워커 사용
+workers = max(2, multiprocessing.cpu_count())  # CPU 코어 수만큼만 사용 (최소 2개)
 worker_class = "sync"  # 동기 워커 (AI 분석용)
-worker_connections = 1000
+worker_connections = 500  # 연결 수 제한 (1000에서 500으로 감소)
 
-# 타임아웃 설정 (중요!)
-timeout = 120  # 120초 워커 타임아웃 (기존 30초에서 증가)
+# 타임아웃 설정
+timeout = 180  # 타임아웃 증가 (120초에서 180초로)
+graceful_timeout = 30  # 정상 종료 대기 시간
 keepalive = 2  # Keep-alive 연결 유지 시간
 
-# 메모리 관리 설정
-max_requests = 1000  # 워커당 최대 요청 수 (메모리 누수 방지)
-max_requests_jitter = 50  # 랜덤 지터 (모든 워커가 동시에 재시작되는 것 방지)
+# 메모리 관리 설정 (강화)
+max_requests = 50  # 워커당 최대 요청 수 대폭 감소 (1000에서 50으로)
+max_requests_jitter = 10  # 랜덤 지터 감소 (50에서 10으로)
 preload_app = True  # 앱 미리 로드 (메모리 절약)
+limit_request_line = 4096  # 요청 라인 길이 제한
+limit_request_fields = 100  # 요청 필드 수 제한
 
 # 로깅 설정
 accesslog = "logs/gunicorn_access.log"
@@ -71,10 +75,11 @@ def on_reload(server):
 
 # 환경별 설정
 if os.getenv('FLASK_ENV') == 'production':
-    # 프로덕션 환경 설정
-    workers = multiprocessing.cpu_count() * 2 + 1
-    timeout = 120
-    max_requests = 1000
+    # 프로덕션 환경 설정 (Lightsail에 최적화)
+    workers = max(2, multiprocessing.cpu_count())
+    timeout = 180
+    max_requests = 50
+    max_requests_jitter = 10
 elif os.getenv('FLASK_ENV') == 'development':
     # 개발 환경 설정
     workers = 2
@@ -82,7 +87,8 @@ elif os.getenv('FLASK_ENV') == 'development':
     max_requests = 100
     reload = True  # 코드 변경 시 자동 리로드
 else:
-    # 기본 설정
-    workers = 2
-    timeout = 120
-    max_requests = 1000 
+    # 기본 설정 (Lightsail에 최적화)
+    workers = max(2, multiprocessing.cpu_count())
+    timeout = 180
+    max_requests = 50
+    max_requests_jitter = 10 

@@ -7,9 +7,8 @@ import os
 # 바인드 주소
 bind = "0.0.0.0:8000"
 
-# 워커 설정 (Lightsail 환경에 맞게 최적화)
-# CPU 코어 수 * 2 + 1 대신 더 적은 워커 사용
-workers = max(2, multiprocessing.cpu_count())  # CPU 코어 수만큼만 사용 (최소 2개)
+# 워커 설정 - 메모리 최적화를 위해 워커 수 고정
+workers = 2  # CPU 코어 수와 상관없이 고정 2개 워커로 설정
 worker_class = "sync"  # 동기 워커 (AI 분석용)
 worker_connections = 500  # 연결 수 제한 (1000에서 500으로 감소)
 
@@ -76,19 +75,19 @@ def on_reload(server):
 # 환경별 설정
 if os.getenv('FLASK_ENV') == 'production':
     # 프로덕션 환경 설정 (Lightsail에 최적화)
-    workers = max(2, multiprocessing.cpu_count())
+    workers = 2  # 메모리 최적화를 위해 고정 2개 워커
     timeout = 180
     max_requests = 50
     max_requests_jitter = 10
 elif os.getenv('FLASK_ENV') == 'development':
     # 개발 환경 설정
-    workers = 2
+    workers = 1  # 개발 환경에서는 1개 워커만 사용
     timeout = 60
     max_requests = 100
     reload = True  # 코드 변경 시 자동 리로드
 else:
     # 기본 설정 (Lightsail에 최적화)
-    workers = max(2, multiprocessing.cpu_count())
+    workers = 2  # 메모리 최적화를 위해 고정 2개 워커
     timeout = 180
     max_requests = 50
     max_requests_jitter = 10 

@@ -128,13 +128,13 @@ with app.app_context():
         except Exception as e:
             logger.error(f"메모리 모니터링 초기화 오류: {e}")
             
-        # 프로세스 모니터링 초기화
-        try:
-            from utils.process_monitor import initialize_process_monitoring
-            initialize_process_monitoring()
-            logger.info("프로세스 모니터링 초기화 완료")
-        except Exception as e:
-            logger.error(f"프로세스 모니터링 초기화 오류: {e}")
+        # 프로세스 모니터링 초기화 - systemd로 분리하여 더 이상 사용하지 않음
+        # try:
+        #     from utils.process_monitor import initialize_process_monitoring
+        #     initialize_process_monitoring()
+        #     logger.info("프로세스 모니터링 초기화 완료")
+        # except Exception as e:
+        #     logger.error(f"프로세스 모니터링 초기화 오류: {e}")
             
     except Exception as e:
         logger.error(f"데이터베이스 초기화 오류: {e}")

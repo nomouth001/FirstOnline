@@ -183,11 +183,21 @@ fi
 # 8. 서비스 재시작
 echo -e "${YELLOW}🔄 서비스 재시작 중...${NC}"
 
-# 기존 프로세스 종료 (안전하게)
-echo -e "${BLUE}🛑 기존 프로세스 종료 중...${NC}"
-pkill -f "python app.py" || true
-pkill -f "celery worker" || true
-pkill -f "gunicorn" || true  # 모든 Gunicorn 프로세스 확실히 종료
+# systemd 서비스가 실행 중이면 먼저 중지
+echo -e "${BLUE}🛑 systemd 서비스 중지 시도...${NC}"
+if systemctl is-active --quiet newsletter 2>/dev/null; then
+    sudo systemctl stop newsletter
+    echo -e "${GREEN}✅ newsletter 서비스 중지 완료${NC}"
+fi
+if systemctl is-active --quiet newsletter-app 2>/dev/null; then
+    sudo systemctl stop newsletter-app
+    echo -e "${GREEN}✅ newsletter-app 서비스 중지 완료${NC}"
+fi
+
+# 기존 프로세스 강제 종료 (안전하게)
+echo -e "${BLUE}🛑 기존 프로세스 강제 종료 중...${NC}"
+sudo pkill -9 -f "gunicorn" || true
+sudo pkill -9 -f "celery" || true
 sleep 5  # 프로세스가 완전히 종료될 때까지 충분히 대기
 
 # Celery 워커 시작 (원래 권장 설정)
@@ -197,11 +207,11 @@ chmod +x celery_start.sh
 echo -e "${GREEN}✅ Celery 워커 시작 완료${NC}"
 
 # systemd 서비스 재시작 시도
-if systemctl is-active --quiet newsletter-app 2>/dev/null; then
+if systemctl list-unit-files | grep -q 'newsletter-app.service'; then
     echo -e "${BLUE}🔄 systemd 서비스 재시작 중...${NC}"
     sudo systemctl restart newsletter-app
     echo -e "${GREEN}✅ systemd 서비스 재시작 완료${NC}"
-elif systemctl is-active --quiet newsletter 2>/dev/null; then
+elif systemctl list-unit-files | grep -q 'newsletter.service'; then
     echo -e "${BLUE}🔄 systemd 서비스 재시작 중...${NC}"
     sudo systemctl restart newsletter
     echo -e "${GREEN}✅ systemd 서비스 재시작 완료${NC}"

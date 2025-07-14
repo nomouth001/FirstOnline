@@ -230,12 +230,12 @@ def initialize_process_monitoring():
             working_dir=os.getcwd()
         )
         
-        # Gunicorn 모니터링 추가 (필요시)
-        process_monitor.add_process(
-            name="gunicorn",
-            command="gunicorn -c gunicorn_config.py app:app",
-            working_dir=os.getcwd()
-        )
+        # Gunicorn 모니터링 추가 (필요시) -> systemd가 관리하므로 제거
+        # process_monitor.add_process(
+        #     name="gunicorn",
+        #     command="gunicorn -c gunicorn_config.py app:app",
+        #     working_dir=os.getcwd()
+        # )
         
         # 모니터링 시작
         process_monitor.start_monitoring()

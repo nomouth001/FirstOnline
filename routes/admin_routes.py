@@ -5,7 +5,7 @@ from models import db, User, StockList, AnalysisHistory, Stock
 from functools import wraps
 from services.analysis_service import start_bulk_analysis_task
 from utils.log_utils import LogStreamer, get_available_log_files, get_log_file_info
-from utils.memory_monitor import get_memory_status_for_admin
+from utils.memory_monitor import get_memory_status, get_process_memory_status
 from utils.batch_recovery import get_all_batch_status, check_and_recover_batches
 
 admin_bp = Blueprint('admin', __name__)
@@ -672,11 +672,21 @@ def api_log_info():
 def api_memory_status():
     """메모리 상태 API"""
     try:
-        memory_status = get_memory_status_for_admin()
-        return jsonify(memory_status)
+        system_memory = get_memory_status()
+        process_memory = get_process_memory_status()
+        
+        # GB 단위로 변환
+        system_memory['total_gb'] = system_memory['total'] / (1024**3)
+        system_memory['used_gb'] = system_memory['used'] / (1024**3)
+        
+        return jsonify({
+            'success': True,
+            'system': system_memory,
+            'processes': process_memory
+        })
     except Exception as e:
-        logger.error(f"메모리 상태 조회 실패: {e}")
-        return jsonify({'error': '메모리 상태 조회에 실패했습니다.'}), 500
+        logger.error(f"메모리 상태 조회 오류: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @admin_bp.route('/api/batch/status')
 @login_required

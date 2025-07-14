@@ -224,10 +224,14 @@ def initialize_process_monitoring():
     """프로세스 모니터링 초기화"""
     try:
         # Celery 워커 모니터링 추가
+        # venv 내의 celery 실행 파일 경로를 명시적으로 지정하여 경로 문제 해결
+        project_root = os.getcwd()  # systemd의 WorkingDirectory 설정을 신뢰
+        celery_executable = os.path.join(project_root, 'venv', 'bin', 'celery')
+
         process_monitor.add_process(
             name="celery_worker",
-            command="celery -A celery_app worker --loglevel=info",
-            working_dir=os.getcwd()
+            command=f"{celery_executable} -A celery_app worker --loglevel=info",
+            working_dir=project_root
         )
         
         # Gunicorn 모니터링 추가 (필요시) -> systemd가 관리하므로 제거

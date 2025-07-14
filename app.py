@@ -7,7 +7,7 @@ from flask_login import LoginManager, current_user, login_required
 from config import SECRET_KEY, SESSION_TYPE, PERMANENT_SESSION_LIFETIME, LOGGING_ENABLED, SQLALCHEMY_DATABASE_URI, SQLALCHEMY_TRACK_MODIFICATIONS
 from models import db, User, StockList, Stock
 from utils.file_manager import get_stock_file_status
-from utils.memory_monitor import init_memory_monitoring
+from utils.memory_monitor import initialize_memory_monitoring
 
 # 로깅 설정을 가장 먼저 적용
 try:
@@ -123,10 +123,18 @@ with app.app_context():
         
         # 메모리 모니터링 초기화
         try:
-            init_memory_monitoring()
+            initialize_memory_monitoring()
             logger.info("메모리 모니터링 초기화 완료")
         except Exception as e:
             logger.error(f"메모리 모니터링 초기화 오류: {e}")
+            
+        # 프로세스 모니터링 초기화
+        try:
+            from utils.process_monitor import initialize_process_monitoring
+            initialize_process_monitoring()
+            logger.info("프로세스 모니터링 초기화 완료")
+        except Exception as e:
+            logger.error(f"프로세스 모니터링 초기화 오류: {e}")
             
     except Exception as e:
         logger.error(f"데이터베이스 초기화 오류: {e}")

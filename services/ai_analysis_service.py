@@ -15,8 +15,8 @@ def timeout_handler(signum, frame):
     """타임아웃 시그널 핸들러"""
     raise TimeoutError("AI 분석 타임아웃")
 
-def perform_gemini_analysis_with_timeout(ticker, common_prompt, daily_b64, weekly_b64, monthly_b64, timeout_seconds=90):
-    """타임아웃이 적용된 Gemini API 분석"""
+def perform_gemini_analysis_with_timeout(ticker, common_prompt, daily_b64, weekly_b64, monthly_b64, timeout_seconds=120, max_retries=3):
+    """타임아웃이 적용된 Gemini API 분석 (재시도 로직 포함)"""
     
     def _perform_analysis():
         """실제 분석 수행 함수"""
@@ -45,27 +45,49 @@ def perform_gemini_analysis_with_timeout(ticker, common_prompt, daily_b64, weekl
             logging.error(f"[{ticker}] Gemini 분석 중 오류: {e}")
             return f"[Gemini 분석 실패] 분석 중 오류 발생: {e}", False
     
-    # ThreadPoolExecutor를 사용한 타임아웃 처리
-    try:
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(_perform_analysis)
-            
-            try:
-                # 타임아웃 적용
-                analysis, succeeded = future.result(timeout=timeout_seconds)
-                return analysis, succeeded
+    # 재시도 로직 적용
+    for attempt in range(max_retries):
+        try:
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(_perform_analysis)
                 
-            except FutureTimeoutError:
-                logging.error(f"[{ticker}] Gemini API 분석 타임아웃 ({timeout_seconds}초 초과)")
-                return f"[Gemini 분석 타임아웃] 분석 시간이 {timeout_seconds}초를 초과했습니다.", False
-                
-    except Exception as e:
-        logging.error(f"[{ticker}] Gemini 분석 실행 중 오류: {e}")
-        return f"[Gemini 분석 실패] 실행 중 오류 발생: {e}", False
-
-def perform_gemini_analysis(ticker, common_prompt, daily_b64, weekly_b64, monthly_b64):
-    """Gemini API를 사용한 분석을 수행합니다. (타임아웃 처리 포함)"""
-    return perform_gemini_analysis_with_timeout(ticker, common_prompt, daily_b64, weekly_b64, monthly_b64, timeout_seconds=90)
+                try:
+                    # 타임아웃 적용
+                    analysis, succeeded = future.result(timeout=timeout_seconds)
+                    
+                    if succeeded:
+                        if attempt > 0:
+                            logging.info(f"[{ticker}] Gemini API 분석 성공 (재시도 {attempt + 1}회 후)")
+                        return analysis, succeeded
+                    else:
+                        # 분석 실패 시 재시도
+                        if attempt < max_retries - 1:
+                            logging.warning(f"[{ticker}] Gemini API 분석 실패, 재시도 중... ({attempt + 1}/{max_retries})")
+                            time.sleep(2 ** attempt)  # 지수 백오프
+                            continue
+                        else:
+                            return analysis, succeeded
+                            
+                except FutureTimeoutError:
+                    if attempt < max_retries - 1:
+                        logging.warning(f"[{ticker}] Gemini API 분석 타임아웃, 재시도 중... ({attempt + 1}/{max_retries})")
+                        time.sleep(2 ** attempt)  # 지수 백오프
+                        continue
+                    else:
+                        logging.error(f"[{ticker}] Gemini API 분석 타임아웃 ({timeout_seconds}초 초과) - 최대 재시도 횟수 초과")
+                        return f"[Gemini 분석 타임아웃] 분석 시간이 {timeout_seconds}초를 초과했습니다. (재시도 {max_retries}회 실패)", False
+                        
+        except Exception as e:
+            if attempt < max_retries - 1:
+                logging.warning(f"[{ticker}] Gemini 분석 실행 중 오류, 재시도 중... ({attempt + 1}/{max_retries}): {e}")
+                time.sleep(2 ** attempt)  # 지수 백오프
+                continue
+            else:
+                logging.error(f"[{ticker}] Gemini 분석 실행 중 오류 - 최대 재시도 횟수 초과: {e}")
+                return f"[Gemini 분석 실패] 실행 중 오류 발생: {e} (재시도 {max_retries}회 실패)", False
+    
+    # 이 부분에 도달하면 안 됨
+    return f"[Gemini 분석 실패] 예상치 못한 오류 발생", False
 
 def perform_openai_analysis(ticker, common_prompt, daily_b64, weekly_b64, monthly_b64):
     """OpenAI API를 사용한 분석을 수행합니다. (현재 비활성화)"""
@@ -74,29 +96,29 @@ def perform_openai_analysis(ticker, common_prompt, daily_b64, weekly_b64, monthl
     succeeded = False
     return analysis, succeeded
 
-def _extract_summary_from_analysis(analysis_text):
-    """분석 텍스트에서 핵심 요약을 추출합니다."""
-    try:
-        if "**핵심 요약**" in analysis_text:
-            start_idx = analysis_text.find("**핵심 요약**")
-            end_idx = analysis_text.find("\n\n", start_idx)
-            if end_idx == -1:
-                end_idx = len(analysis_text)
-            summary = analysis_text[start_idx:end_idx].strip()
-            return summary
-        else:
-            # 핵심 요약이 없으면 첫 번째 문단을 반환
-            lines = analysis_text.split('\n')
-            for line in lines:
-                if line.strip() and not line.startswith('**'):
-                    return line.strip()
-            return "요약 없음."
-    except Exception as e:
-        logging.error(f"Error extracting summary: {e}")
-        return "요약 추출 실패."
+def perform_analysis_with_memory_check(ticker, common_prompt, daily_b64, weekly_b64, monthly_b64, timeout_seconds=120):
+    """메모리 체크를 포함한 AI 분석"""
+    from utils.memory_monitor import get_memory_status, cleanup_memory
+    
+    # 분석 전 메모리 상태 체크
+    memory_info = get_memory_status()
+    if memory_info['percent'] > 90:
+        logging.warning(f"[{ticker}] 메모리 사용률이 높습니다 ({memory_info['percent']:.1f}%). 메모리 정리 후 진행합니다.")
+        cleanup_memory()
+        time.sleep(1)  # 메모리 정리 후 잠시 대기
+    
+    # AI 분석 수행
+    analysis, succeeded = perform_gemini_analysis_with_timeout(
+        ticker, common_prompt, daily_b64, weekly_b64, monthly_b64, timeout_seconds
+    )
+    
+    # 분석 후 메모리 정리
+    cleanup_memory()
+    
+    return analysis, succeeded
 
 def check_ai_service_health():
-    """AI 서비스 상태 확인"""
+    """AI 서비스 상태 확인 (개선된 버전)"""
     try:
         if not GOOGLE_API_KEY:
             return False, "Gemini API 키가 설정되지 않았습니다."
@@ -121,4 +143,17 @@ def check_ai_service_health():
                 return False, "AI 서비스 타임아웃"
                 
     except Exception as e:
-        return False, f"AI 서비스 오류: {e}" 
+        return False, f"AI 서비스 오류: {e}"
+
+def get_ai_analysis_status():
+    """AI 분석 서비스 상태 정보 반환"""
+    health_status, health_message = check_ai_service_health()
+    
+    return {
+        'service_healthy': health_status,
+        'service_message': health_message,
+        'gemini_api_configured': bool(GOOGLE_API_KEY),
+        'model_version': GEMINI_TEXT_MODEL_VERSION,
+        'default_timeout': 120,
+        'max_retries': 3
+    } 

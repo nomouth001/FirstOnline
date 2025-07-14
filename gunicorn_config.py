@@ -7,19 +7,19 @@ import os
 # 바인드 주소
 bind = "0.0.0.0:8000"
 
-# 워커 설정 - 메모리 최적화를 위해 워커 수 고정
-workers = 2  # CPU 코어 수와 상관없이 고정 2개 워커로 설정
+# 워커 설정 - 원래 권장 설정으로 복원
+workers = multiprocessing.cpu_count() * 2 + 1  # CPU 코어 수 * 2 + 1 (원래 권장 설정)
 worker_class = "sync"  # 동기 워커 (AI 분석용)
-worker_connections = 500  # 연결 수 제한 (1000에서 500으로 감소)
+worker_connections = 1000  # 연결 수 제한 (원래 설정으로 복원)
 
 # 타임아웃 설정
 timeout = 180  # 타임아웃 증가 (120초에서 180초로)
 graceful_timeout = 30  # 정상 종료 대기 시간
 keepalive = 2  # Keep-alive 연결 유지 시간
 
-# 메모리 관리 설정 (강화)
-max_requests = 50  # 워커당 최대 요청 수 대폭 감소 (1000에서 50으로)
-max_requests_jitter = 10  # 랜덤 지터 감소 (50에서 10으로)
+# 메모리 관리 설정 - 원래 설정으로 복원
+max_requests = 1000  # 워커당 최대 요청 수 (원래 설정으로 복원)
+max_requests_jitter = 50  # 랜덤 지터 (원래 설정으로 복원)
 preload_app = True  # 앱 미리 로드 (메모리 절약)
 limit_request_line = 4096  # 요청 라인 길이 제한
 limit_request_fields = 100  # 요청 필드 수 제한
@@ -74,20 +74,20 @@ def on_reload(server):
 
 # 환경별 설정
 if os.getenv('FLASK_ENV') == 'production':
-    # 프로덕션 환경 설정 (Lightsail에 최적화)
-    workers = 2  # 메모리 최적화를 위해 고정 2개 워커
+    # 프로덕션 환경 설정
+    workers = multiprocessing.cpu_count() * 2 + 1  # 원래 권장 설정
     timeout = 180
-    max_requests = 50
-    max_requests_jitter = 10
+    max_requests = 1000
+    max_requests_jitter = 50
 elif os.getenv('FLASK_ENV') == 'development':
     # 개발 환경 설정
-    workers = 1  # 개발 환경에서는 1개 워커만 사용
+    workers = 2  # 개발 환경에서는 적당한 수
     timeout = 60
     max_requests = 100
     reload = True  # 코드 변경 시 자동 리로드
 else:
-    # 기본 설정 (Lightsail에 최적화)
-    workers = 2  # 메모리 최적화를 위해 고정 2개 워커
+    # 기본 설정
+    workers = multiprocessing.cpu_count() * 2 + 1  # 원래 권장 설정
     timeout = 180
-    max_requests = 50
-    max_requests_jitter = 10 
+    max_requests = 1000
+    max_requests_jitter = 50 

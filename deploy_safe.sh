@@ -156,8 +156,8 @@ pkill -f "celery worker" || true
 pkill -f "gunicorn" || true  # 모든 Gunicorn 프로세스 확실히 종료
 sleep 5  # 프로세스가 완전히 종료될 때까지 충분히 대기
 
-# Celery 워커 시작 (메모리 최적화 - 워커 수 1개로 제한)
-echo -e "${BLUE}🌱 Celery 워커 시작 (메모리 최적화)...${NC}"
+# Celery 워커 시작 (원래 권장 설정)
+echo -e "${BLUE}🌱 Celery 워커 시작 (원래 권장 설정)...${NC}"
 chmod +x celery_start.sh
 ./celery_start.sh
 echo -e "${GREEN}✅ Celery 워커 시작 완료${NC}"

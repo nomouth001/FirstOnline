@@ -1,270 +1,183 @@
 import psutil
 import logging
-import os
-import time
 import threading
+import time
 from datetime import datetime
-from typing import Dict, Optional, Callable
-from dataclasses import dataclass
+import os
 
 logger = logging.getLogger(__name__)
 
-@dataclass
-class MemoryStats:
-    """메모리 통계 정보"""
-    timestamp: datetime
-    total_memory: float  # MB
-    used_memory: float   # MB
-    available_memory: float  # MB
-    memory_percent: float  # %
-    process_memory: float  # MB
-    process_percent: float  # %
-    
-    def to_dict(self) -> Dict:
-        return {
-            'timestamp': self.timestamp.isoformat(),
-            'total_memory_mb': round(self.total_memory, 2),
-            'used_memory_mb': round(self.used_memory, 2),
-            'available_memory_mb': round(self.available_memory, 2),
-            'memory_percent': round(self.memory_percent, 2),
-            'process_memory_mb': round(self.process_memory, 2),
-            'process_percent': round(self.process_percent, 2)
-        }
-
 class MemoryMonitor:
-    """메모리 사용량 모니터링 클래스"""
-    
-    def __init__(self, 
-                 warning_threshold: float = 70.0,  # 경고 임계치 (%) - 80%에서 70%로 낮춤
-                 critical_threshold: float = 85.0,  # 위험 임계치 (%) - 90%에서 85%로 낮춤
-                 check_interval: int = 30):  # 체크 간격 (초) - 60초에서 30초로 단축
+    def __init__(self, check_interval=30, warning_threshold=80, critical_threshold=90):
+        """
+        메모리 모니터링 시스템 초기화
+        
+        Args:
+            check_interval (int): 메모리 체크 간격 (초)
+            warning_threshold (int): 경고 임계값 (%)
+            critical_threshold (int): 위험 임계값 (%)
+        """
+        self.check_interval = check_interval
         self.warning_threshold = warning_threshold
         self.critical_threshold = critical_threshold
-        self.check_interval = check_interval
-        self.process = psutil.Process()
-        self._monitoring = False
-        self._monitor_thread = None
-        self.last_stats = None
-        self.alert_callbacks = []
+        self.monitoring = False
+        self.monitor_thread = None
+        self.last_warning_time = 0
+        self.last_critical_time = 0
+        self.warning_cooldown = 300  # 5분 쿨다운
+        self.critical_cooldown = 60   # 1분 쿨다운
         
-    def get_memory_stats(self) -> MemoryStats:
-        """현재 메모리 통계 반환"""
-        try:
-            # 시스템 메모리 정보
-            memory = psutil.virtual_memory()
-            
-            # 프로세스 메모리 정보
-            process_memory = self.process.memory_info()
-            
-            stats = MemoryStats(
-                timestamp=datetime.now(),
-                total_memory=memory.total / (1024 * 1024),  # MB
-                used_memory=memory.used / (1024 * 1024),    # MB
-                available_memory=memory.available / (1024 * 1024),  # MB
-                memory_percent=memory.percent,
-                process_memory=process_memory.rss / (1024 * 1024),  # MB
-                process_percent=self.process.memory_percent()
-            )
-            
-            self.last_stats = stats
-            return stats
-            
-        except Exception as e:
-            logger.error(f"메모리 통계 수집 실패: {e}")
-            return None
-    
-    def check_memory_usage(self) -> Dict:
-        """메모리 사용량 체크 및 알림"""
-        stats = self.get_memory_stats()
-        if not stats:
-            return {'status': 'error', 'message': '메모리 통계 수집 실패'}
+    def get_memory_info(self):
+        """현재 메모리 사용량 정보 반환"""
+        memory = psutil.virtual_memory()
+        swap = psutil.swap_memory()
         
-        result = {
-            'status': 'ok',
-            'stats': stats.to_dict(),
-            'alerts': []
+        return {
+            'total': memory.total,
+            'available': memory.available,
+            'used': memory.used,
+            'percent': memory.percent,
+            'swap_total': swap.total,
+            'swap_used': swap.used,
+            'swap_percent': swap.percent
         }
-        
-        # 시스템 메모리 체크
-        if stats.memory_percent >= self.critical_threshold:
-            alert = {
-                'level': 'critical',
-                'type': 'system_memory',
-                'message': f'시스템 메모리 사용량이 위험 수준입니다: {stats.memory_percent:.1f}%',
-                'value': stats.memory_percent
-            }
-            result['alerts'].append(alert)
-            result['status'] = 'critical'
-            self._trigger_alert(alert)
-            
-        elif stats.memory_percent >= self.warning_threshold:
-            alert = {
-                'level': 'warning',
-                'type': 'system_memory',
-                'message': f'시스템 메모리 사용량이 높습니다: {stats.memory_percent:.1f}%',
-                'value': stats.memory_percent
-            }
-            result['alerts'].append(alert)
-            if result['status'] == 'ok':
-                result['status'] = 'warning'
-            self._trigger_alert(alert)
-        
-        # 프로세스 메모리 체크 (500MB 이상 시 경고)
-        if stats.process_memory > 500:
-            alert = {
-                'level': 'warning',
-                'type': 'process_memory',
-                'message': f'프로세스 메모리 사용량이 높습니다: {stats.process_memory:.1f}MB',
-                'value': stats.process_memory
-            }
-            result['alerts'].append(alert)
-            if result['status'] == 'ok':
-                result['status'] = 'warning'
-            self._trigger_alert(alert)
-        
-        return result
     
-    def _trigger_alert(self, alert: Dict):
-        """알림 트리거"""
-        logger.warning(f"메모리 알림: {alert['message']}")
+    def get_process_memory_info(self):
+        """현재 프로세스들의 메모리 사용량 정보 반환"""
+        processes = []
         
-        # 등록된 콜백 실행
-        for callback in self.alert_callbacks:
+        for proc in psutil.process_iter(['pid', 'name', 'memory_percent', 'memory_info']):
             try:
-                callback(alert)
-            except Exception as e:
-                logger.error(f"알림 콜백 실행 실패: {e}")
+                pinfo = proc.info
+                if pinfo['memory_percent'] > 1.0:  # 1% 이상 메모리 사용 프로세스만
+                    processes.append({
+                        'pid': pinfo['pid'],
+                        'name': pinfo['name'],
+                        'memory_percent': pinfo['memory_percent'],
+                        'memory_mb': pinfo['memory_info'].rss / 1024 / 1024
+                    })
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+        
+        # 메모리 사용량 순으로 정렬
+        processes.sort(key=lambda x: x['memory_percent'], reverse=True)
+        return processes[:10]  # 상위 10개만 반환
     
-    def add_alert_callback(self, callback: Callable):
-        """알림 콜백 추가"""
-        self.alert_callbacks.append(callback)
+    def log_memory_status(self, level='info'):
+        """메모리 상태를 로그에 기록"""
+        memory_info = self.get_memory_info()
+        process_info = self.get_process_memory_info()
+        
+        memory_gb = memory_info['total'] / (1024**3)
+        used_gb = memory_info['used'] / (1024**3)
+        available_gb = memory_info['available'] / (1024**3)
+        
+        log_message = f"""
+메모리 상태 리포트 ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')}):
+- 총 메모리: {memory_gb:.2f} GB
+- 사용 중: {used_gb:.2f} GB ({memory_info['percent']:.1f}%)
+- 사용 가능: {available_gb:.2f} GB
+- 스왑 사용: {memory_info['swap_percent']:.1f}%
+
+메모리 사용량 상위 프로세스:"""
+        
+        for proc in process_info:
+            log_message += f"\n- {proc['name']} (PID: {proc['pid']}): {proc['memory_mb']:.1f} MB ({proc['memory_percent']:.1f}%)"
+        
+        if level == 'warning':
+            logger.warning(log_message)
+        elif level == 'critical':
+            logger.critical(log_message)
+        else:
+            logger.info(log_message)
+    
+    def check_memory_status(self):
+        """메모리 상태 체크 및 필요시 알림"""
+        memory_info = self.get_memory_info()
+        current_time = time.time()
+        
+        memory_percent = memory_info['percent']
+        
+        if memory_percent >= self.critical_threshold:
+            if current_time - self.last_critical_time > self.critical_cooldown:
+                logger.critical(f"🔴 메모리 위험: 시스템 메모리 사용량이 위험 수준입니다: {memory_percent:.1f}%")
+                self.log_memory_status('critical')
+                self.last_critical_time = current_time
+                
+                # 메모리 부족 시 가비지 컬렉션 강제 실행
+                import gc
+                gc.collect()
+                
+        elif memory_percent >= self.warning_threshold:
+            if current_time - self.last_warning_time > self.warning_cooldown:
+                logger.warning(f"메모리 알림: 시스템 메모리 사용량이 위험 수준입니다: {memory_percent:.1f}%")
+                self.log_memory_status('warning')
+                self.last_warning_time = current_time
+    
+    def monitor_loop(self):
+        """메모리 모니터링 루프"""
+        logger.info(f"메모리 모니터링 시작 - 체크 간격: {self.check_interval}초")
+        
+        while self.monitoring:
+            try:
+                self.check_memory_status()
+                time.sleep(self.check_interval)
+            except Exception as e:
+                logger.error(f"메모리 모니터링 중 오류 발생: {e}")
+                time.sleep(self.check_interval)
     
     def start_monitoring(self):
-        """백그라운드 모니터링 시작"""
-        if self._monitoring:
-            logger.warning("메모리 모니터링이 이미 실행 중입니다.")
-            return
-        
-        self._monitoring = True
-        self._monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
-        self._monitor_thread.start()
-        logger.info(f"메모리 모니터링 시작 - 체크 간격: {self.check_interval}초")
+        """메모리 모니터링 시작"""
+        if not self.monitoring:
+            self.monitoring = True
+            self.monitor_thread = threading.Thread(target=self.monitor_loop, daemon=True)
+            self.monitor_thread.start()
+            logger.info("메모리 모니터링 시작됨")
     
     def stop_monitoring(self):
-        """백그라운드 모니터링 중지"""
-        self._monitoring = False
-        if self._monitor_thread:
-            self._monitor_thread.join(timeout=5)
-        logger.info("메모리 모니터링 중지")
+        """메모리 모니터링 중지"""
+        if self.monitoring:
+            self.monitoring = False
+            if self.monitor_thread:
+                self.monitor_thread.join(timeout=5)
+            logger.info("메모리 모니터링 중지됨")
     
-    def _monitor_loop(self):
-        """모니터링 루프"""
-        while self._monitoring:
-            try:
-                self.check_memory_usage()
-                time.sleep(self.check_interval)
-            except Exception as e:
-                logger.error(f"메모리 모니터링 루프 오류: {e}")
-                time.sleep(self.check_interval)
-    
-    def get_memory_info_for_logging(self) -> str:
-        """로깅용 메모리 정보 문자열"""
-        stats = self.get_memory_stats()
-        if not stats:
-            return "메모리 정보 수집 실패"
-        
-        return (f"시스템 메모리: {stats.memory_percent:.1f}% "
-                f"({stats.used_memory:.1f}/{stats.total_memory:.1f}MB), "
-                f"프로세스 메모리: {stats.process_memory:.1f}MB")
+    def get_status(self):
+        """현재 모니터링 상태 반환"""
+        return {
+            'monitoring': self.monitoring,
+            'check_interval': self.check_interval,
+            'warning_threshold': self.warning_threshold,
+            'critical_threshold': self.critical_threshold
+        }
 
 # 전역 메모리 모니터 인스턴스
-_memory_monitor = None
+memory_monitor = MemoryMonitor()
 
-def get_memory_monitor() -> MemoryMonitor:
-    """전역 메모리 모니터 인스턴스 반환"""
-    global _memory_monitor
-    if _memory_monitor is None:
-        _memory_monitor = MemoryMonitor()
-    return _memory_monitor
-
-def init_memory_monitoring():
+def initialize_memory_monitoring():
     """메모리 모니터링 초기화"""
-    monitor = get_memory_monitor()
-    
-    # 로그 알림 콜백 추가
-    def log_alert(alert):
-        level = alert['level']
-        message = alert['message']
-        if level == 'critical':
-            logger.critical(f"🔴 메모리 위험: {message}")
-        elif level == 'warning':
-            logger.warning(f"🟡 메모리 경고: {message}")
-    
-    monitor.add_alert_callback(log_alert)
-    monitor.start_monitoring()
-    
-    logger.info("메모리 모니터링 초기화 완료")
-
-def log_memory_usage(context: str = ""):
-    """현재 메모리 사용량 로그"""
-    monitor = get_memory_monitor()
-    memory_info = monitor.get_memory_info_for_logging()
-    
-    if context:
-        logger.info(f"[{context}] {memory_info}")
-    else:
-        logger.info(f"메모리 사용량: {memory_info}")
-
-def check_memory_before_analysis(ticker: str) -> bool:
-    """분석 전 메모리 체크 (더 엄격한 기준 적용)"""
-    monitor = get_memory_monitor()
-    result = monitor.check_memory_usage()
-    
-    # 메모리 사용량 통계
-    stats = result.get('stats', {})
-    memory_percent = stats.get('memory_percent', 100)  # 기본값을 100%로 설정하여 오류 시 안전하게 중단
-    process_memory = stats.get('process_memory_mb', 0)
-    
-    # 더 엄격한 기준으로 체크
-    if result['status'] == 'critical' or memory_percent > 85:
-        logger.error(f"[{ticker}] 메모리 부족으로 분석 중단: {memory_percent:.1f}%")
-        return False
-    elif result['status'] == 'warning' or memory_percent > 70:
-        # 경고 상태에서도 프로세스 메모리가 높으면 중단
-        if process_memory > 400:  # 400MB 이상이면 중단 (기존 500MB)
-            logger.error(f"[{ticker}] 프로세스 메모리 과다로 분석 중단: {process_memory:.1f}MB")
-            return False
-        logger.warning(f"[{ticker}] 메모리 사용량 경고: {memory_percent:.1f}%, 프로세스: {process_memory:.1f}MB")
-    
-    # 시스템 상태 확인 (CPU 부하 체크)
     try:
-        cpu_percent = psutil.cpu_percent(interval=0.5)
-        if cpu_percent > 90:  # CPU 사용률이 90% 이상이면 중단
-            logger.error(f"[{ticker}] CPU 과부하로 분석 중단: {cpu_percent:.1f}%")
-            return False
-        elif cpu_percent > 75:  # CPU 사용률이 75% 이상이면 경고
-            logger.warning(f"[{ticker}] CPU 사용률 높음: {cpu_percent:.1f}%")
+        memory_monitor.start_monitoring()
+        logger.info("메모리 모니터링 초기화 완료")
+        return True
     except Exception as e:
-        logger.error(f"CPU 상태 확인 중 오류: {e}")
-    
-    return True
+        logger.error(f"메모리 모니터링 초기화 실패: {e}")
+        return False
 
-def get_memory_status_for_admin() -> Dict:
-    """관리자 페이지용 메모리 상태"""
-    monitor = get_memory_monitor()
-    result = monitor.check_memory_usage()
-    
-    if result['status'] == 'error':
-        return result
-    
-    stats = result['stats']
-    return {
-        'status': result['status'],
-        'system_memory_percent': stats['memory_percent'],
-        'system_memory_used': stats['used_memory_mb'],
-        'system_memory_total': stats['total_memory_mb'],
-        'process_memory': stats['process_memory_mb'],
-        'process_memory_percent': stats['process_percent'],
-        'alerts': result['alerts'],
-        'timestamp': stats['timestamp']
-    } 
+def get_memory_status():
+    """현재 메모리 상태 반환"""
+    return memory_monitor.get_memory_info()
+
+def get_process_memory_status():
+    """프로세스별 메모리 상태 반환"""
+    return memory_monitor.get_process_memory_info()
+
+def log_current_memory_status():
+    """현재 메모리 상태 로그 기록"""
+    memory_monitor.log_memory_status()
+
+def cleanup_memory():
+    """메모리 정리 작업"""
+    import gc
+    gc.collect()
+    logger.info("메모리 정리 작업 완료") 

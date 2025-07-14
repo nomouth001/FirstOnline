@@ -13,7 +13,7 @@ from services.progress_service import start_batch_progress, end_batch_progress, 
 from utils.file_manager import get_date_folder_path
 from utils.timeout_utils import safe_chart_generation, safe_ai_analysis
 from utils.batch_recovery import start_batch_tracking, update_batch_progress, end_batch_tracking, check_and_recover_batches, get_batch_status
-from utils.memory_monitor import check_memory_before_analysis, log_memory_usage
+from utils.memory_monitor import get_memory_status, log_current_memory_status, cleanup_memory
 from config import ANALYSIS_DIR, MULTI_SUMMARY_DIR, CHART_GENERATION_TIMEOUT, AI_ANALYSIS_TIMEOUT
 
 # Constants
@@ -176,16 +176,18 @@ def _process_tickers_batch(tickers_to_process, user, progress_id, summary_filena
                 processing_count = 0
                 
                 # 휴식 후 메모리 상태 로깅
-                log_memory_usage(f"배치 처리 휴식 후 - {ticker}")
+                log_current_memory_status()
             
             # 메모리 체크 (더 엄격하게)
-            if not check_memory_before_analysis(ticker):
-                logging.error(f"[{ticker}] 메모리 부족으로 배치 처리 중단")
+            memory_info = get_memory_status()
+            if memory_info['percent'] > 90:
+                logging.error(f"[{ticker}] 메모리 부족으로 배치 처리 중단 ({memory_info['percent']:.1f}%)")
+                cleanup_memory()
                 end_batch_tracking(progress_id, False, "메모리 부족")
                 return False, {"error": "메모리 부족으로 배치 처리가 중단되었습니다."}, 500, {}
             
             # 메모리 사용량 로그
-            log_memory_usage(f"배치 처리 중 - {ticker}")
+            log_current_memory_status()
 
             max_retries = 3
             retry_count = 0

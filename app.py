@@ -5,7 +5,7 @@ import os
 from flask import Flask, render_template, session, flash, redirect, url_for, request, g, jsonify
 from flask_login import LoginManager, current_user, login_required
 from flask_migrate import Migrate
-from config import SECRET_KEY, SESSION_TYPE, PERMANENT_SESSION_LIFETIME, LOGGING_ENABLED, SQLALCHEMY_DATABASE_URI, SQLALCHEMY_TRACK_MODIFICATIONS, Config, DevelopmentConfig, ProductionConfig
+import config as app_config # config 모듈을 직접 임포트
 from models import db, User, StockList, Stock
 from utils.file_manager import get_stock_file_status
 from utils.memory_monitor import initialize_memory_monitoring
@@ -43,15 +43,11 @@ logger.addHandler(file_handler)
 
 logger.info("애플리케이션 시작 - 로깅 설정 완료")
 
-def create_app(config_class=None):
+def create_app():
     app = Flask(__name__, instance_relative_config=True)
 
-    # 설정 적용
-    app.secret_key = SECRET_KEY
-    app.config['SESSION_TYPE'] = SESSION_TYPE
-    app.config['PERMANENT_SESSION_LIFETIME'] = PERMANENT_SESSION_LIFETIME
-    app.config['SQLALCHEMY_DATABASE_URI'] = SQLALCHEMY_DATABASE_URI
-    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = SQLALCHEMY_TRACK_MODIFICATIONS
+    # config.py의 모든 설정을 app.config에 로드
+    app.config.from_object(app_config)
 
     # 데이터베이스 초기화
     db.init_app(app)

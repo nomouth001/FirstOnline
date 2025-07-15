@@ -55,10 +55,8 @@ def create_celery_app(flask_app=None):
 
 def create_flask_app_for_celery():
     """Celery 초기화를 위한 간단한 Flask 앱을 생성합니다."""
-    app = Flask(__name__)
-    # 실제 앱과 동일한 설정을 로드해야 할 수 있습니다.
-    # 예: app.config.from_object('config.Config')
-    return app
+    from app import create_app
+    return create_app()
 
 # 전역 Celery 인스턴스 (celery_worker.py 등에서 사용)
 celery_app = create_celery_app() 

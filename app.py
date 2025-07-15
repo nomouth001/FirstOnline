@@ -155,16 +155,16 @@ def create_app():
     def prompt_test():
         return render_template('prompt_test.html')
     
-    # 404 에러 핸들러
+    # 404 에러 핸들러 - 기본 Flask 에러 페이지 사용
     @app.errorhandler(404)
     def not_found_error(error):
-        return render_template('errors/404.html'), 404
+        return "<h1>404 - 페이지를 찾을 수 없습니다</h1><p>요청하신 페이지가 존재하지 않습니다.</p>", 404
     
-    # 500 에러 핸들러
+    # 500 에러 핸들러 - 기본 Flask 에러 페이지 사용
     @app.errorhandler(500)
     def internal_error(error):
         db.session.rollback()
-        return render_template('errors/500.html'), 500
+        return "<h1>500 - 서버 내부 오류</h1><p>서버에서 오류가 발생했습니다. 잠시 후 다시 시도해주세요.</p>", 500
     
     # 데이터베이스 초기화 (첫 번째 요청 시)
     with app.app_context():

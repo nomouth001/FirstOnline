@@ -37,6 +37,55 @@ def get_celery_instance():
     """Celery 인스턴스를 지연 로드합니다."""
     return get_celery_app()
 
+# 메모 관련 라우트
+@analysis_bp.route('/get_memo/<ticker>/<date_str>')
+@login_required
+def get_memo(ticker, date_str):
+    """특정 종목과 날짜의 메모를 가져옵니다."""
+    try:
+        memo_dir = os.path.join('static', 'memos')
+        os.makedirs(memo_dir, exist_ok=True)
+        
+        memo_filename = f"{ticker}_{date_str}_memo.txt"
+        memo_path = os.path.join(memo_dir, memo_filename)
+        
+        memo_content = ""
+        if os.path.exists(memo_path):
+            with open(memo_path, 'r', encoding='utf-8') as f:
+                memo_content = f.read()
+        
+        return jsonify({"memo": memo_content})
+    except Exception as e:
+        logging.error(f"Error loading memo for {ticker} on {date_str}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@analysis_bp.route('/save_memo', methods=['POST'])
+@login_required 
+def save_memo():
+    """메모를 저장합니다."""
+    try:
+        data = request.get_json()
+        ticker = data.get('ticker')
+        date_str = data.get('date_str')
+        memo_content = data.get('memo', '')
+        
+        if not ticker or not date_str:
+            return jsonify({"error": "ticker와 date_str이 필요합니다"}), 400
+            
+        memo_dir = os.path.join('static', 'memos')
+        os.makedirs(memo_dir, exist_ok=True)
+        
+        memo_filename = f"{ticker}_{date_str}_memo.txt"
+        memo_path = os.path.join(memo_dir, memo_filename)
+        
+        with open(memo_path, 'w', encoding='utf-8') as f:
+            f.write(memo_content)
+            
+        return jsonify({"message": "메모가 성공적으로 저장되었습니다"})
+    except Exception as e:
+        logging.error(f"Error saving memo: {e}")
+        return jsonify({"error": str(e)}), 500
+
 # 누락된 함수들 추가
 def get_progress():
     """진행 상황을 가져옵니다."""
@@ -175,38 +224,60 @@ def generate_all_charts_and_analysis_route(list_name):
         return jsonify({"error": "Authentication required"}), 401
     
     try:
-        # Celery 백그라운드 작업으로 일괄 분석 실행 시도
-        try:
-            task = run_batch_analysis_task.delay(list_name, current_user.id)
-            logging.info(f"Batch analysis task started for list: {list_name}, task_id: {task.id}")
+        # Celery 워커 상태 확인
+        def check_celery_workers():
+            try:
+                celery = get_celery_instance()
+                inspect = celery.control.inspect()
+                stats = inspect.stats()
+                if stats is None or len(stats) == 0:
+                    return False
+                return True
+            except Exception as e:
+                logging.warning(f"Celery 워커 상태 확인 실패: {e}")
+                return False
+
+        # Celery 워커가 활성화되어 있는지 확인
+        if check_celery_workers():
+            try:
+                task = run_batch_analysis_task.delay(list_name, current_user.id)
+                logging.info(f"Batch analysis task started for list: {list_name}, task_id: {task.id}")
+                
+                return jsonify({
+                    "success": True,
+                    "message": f"일괄 분석이 백그라운드에서 시작되었습니다.",
+                    "task_id": task.id,
+                    "list_name": list_name
+                }), 202  # 202 Accepted - 작업이 수락되었지만 아직 완료되지 않음
+                
+            except Exception as celery_error:
+                logging.warning(f"Celery 작업 실행 실패: {celery_error}")
+                raise celery_error
+        else:
+            logging.warning("Celery 워커가 실행되지 않음, 동기 방식으로 전환")
+            raise Exception("No Celery workers available")
             
-            return jsonify({
-                "success": True,
-                "message": f"일괄 분석이 백그라운드에서 시작되었습니다.",
-                "task_id": task.id,
-                "list_name": list_name
-            }), 202  # 202 Accepted - 작업이 수락되었지만 아직 완료되지 않음
-            
-        except Exception as celery_error:
-            logging.warning(f"Celery 작업 실행 실패, 동기 방식으로 전환: {celery_error}")
-            
-            # Celery 실패 시 동기 방식으로 일괄 분석 실행
-            from services.batch_analysis_service import run_single_list_analysis
-            
-            # 백그라운드 스레드로 실행하여 응답 지연 방지
-            import threading
-            thread = threading.Thread(
-                target=run_single_list_analysis,
-                args=(list_name, current_user.id)
-            )
-            thread.daemon = True
-            thread.start()
-            
-            return jsonify({
-                "success": True,
-                "message": f"일괄 분석이 시작되었습니다. (동기 방식)",
-                "list_name": list_name
-            }), 202
+        # Celery 실패 시 동기 방식으로 일괄 분석 실행
+    except Exception as celery_error:
+        logging.warning(f"Celery 사용 불가, 동기 방식으로 전환: {celery_error}")
+        
+        # Celery 실패 시 동기 방식으로 일괄 분석 실행
+        from services.batch_analysis_service import run_single_list_analysis
+        
+        # 백그라운드 스레드로 실행하여 응답 지연 방지
+        import threading
+        thread = threading.Thread(
+            target=run_single_list_analysis,
+            args=(list_name, current_user.id)
+        )
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({
+            "success": True,
+            "message": f"일괄 분석이 시작되었습니다. (동기 방식)",
+            "list_name": list_name
+        }), 202
         
     except Exception as e:
         logging.exception(f"Error starting batch analysis for list: {list_name}")
@@ -247,18 +318,58 @@ def generate_multiple_lists_analysis_route():
         
         logging.info(f"Selected lists: {list_names}")
         
-        # 여러 리스트 분석을 Celery 백그라운드 작업으로 실행
-        logging.info("Starting multiple lists analysis with Celery")
-        task = run_multiple_batch_analysis_task.delay(list_names, current_user.id)
-        
-        logging.info(f"Multiple batch analysis task started for lists: {list_names}, task_id: {task.id}")
-        
-        return jsonify({
-            "success": True,
-            "message": f"{len(list_names)}개 리스트의 일괄 분석이 백그라운드에서 시작되었습니다.",
-            "task_id": task.id,
-            "list_names": list_names
-        }), 202  # 202 Accepted - 작업이 수락되었지만 아직 완료되지 않음
+        # Celery 워커 상태 확인 후 실행
+        try:
+            # Celery 워커 상태 확인 함수
+            def check_celery_workers():
+                try:
+                    celery = get_celery_instance()
+                    inspect = celery.control.inspect()
+                    stats = inspect.stats()
+                    if stats is None or len(stats) == 0:
+                        return False
+                    return True
+                except Exception as e:
+                    logging.warning(f"Celery 워커 상태 확인 실패: {e}")
+                    return False
+
+            # Celery 워커가 활성화되어 있는지 확인
+            if check_celery_workers():
+                logging.info("Starting multiple lists analysis with Celery")
+                task = run_multiple_batch_analysis_task.delay(list_names, current_user.id)
+                
+                logging.info(f"Multiple batch analysis task started for lists: {list_names}, task_id: {task.id}")
+                
+                return jsonify({
+                    "success": True,
+                    "message": f"{len(list_names)}개 리스트의 일괄 분석이 백그라운드에서 시작되었습니다.",
+                    "task_id": task.id,
+                    "list_names": list_names
+                }), 202  # 202 Accepted - 작업이 수락되었지만 아직 완료되지 않음
+            else:
+                logging.warning("Celery 워커가 실행되지 않음, 동기 방식으로 전환")
+                raise Exception("No Celery workers available")
+                
+        except Exception as celery_error:
+            logging.warning(f"Celery 사용 불가, 동기 방식으로 전환: {celery_error}")
+            
+            # Celery 실패 시 동기 방식으로 다중 리스트 분석 실행
+            from services.batch_analysis_service import run_multiple_lists_analysis
+            
+            # 백그라운드 스레드로 실행하여 응답 지연 방지
+            import threading
+            thread = threading.Thread(
+                target=run_multiple_lists_analysis,
+                args=(list_names, current_user.id)
+            )
+            thread.daemon = True
+            thread.start()
+            
+            return jsonify({
+                "success": True,
+                "message": f"{len(list_names)}개 리스트의 일괄 분석이 시작되었습니다. (동기 방식)",
+                "list_names": list_names
+            }), 202
         
     except json.JSONDecodeError as e:
         logging.exception("JSON decode error in generate_multiple_lists_analysis_route")

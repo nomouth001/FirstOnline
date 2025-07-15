@@ -347,7 +347,7 @@ def download_from_yahoo_finance(ticker, start_date, end_date, max_retries=3, del
             
             # yfinance 내부에서 발생하는 HTTP 오류를 직접 캐치하기 위해 세션 확인
             try:
-            stock_data = stock.history(start=start_date, end=end_date, auto_adjust=False)
+                stock_data = stock.history(start=start_date, end=end_date, auto_adjust=False)
             except Exception as yf_error:
                 # yfinance 내부 오류를 분석하여 HTTP 상태코드 추출
                 error_str = str(yf_error)

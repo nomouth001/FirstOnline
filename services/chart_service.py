@@ -128,9 +128,13 @@ def generate_chart(ticker):
             logging.warning(f"[{ticker}] No data downloaded for {ticker}. This might be due to invalid ticker symbol or data availability issues.")
             # 빈 DataFrame을 반환하여 다음 단계에서 처리할 수 있도록 함
             return {
-                "Daily": None,
-                "Weekly": None,
-                "Monthly": None
+                "charts": {
+                    "Daily": None,
+                    "Weekly": None,
+                    "Monthly": None
+                },
+                "data": pd.DataFrame(),  # 빈 DataFrame
+                "end_date": None
             }
         if df.index.tz is not None:
             df.index = df.index.tz_localize(None)
@@ -164,9 +168,13 @@ def generate_chart(ticker):
 
         logging.info(f"[{ticker}] Chart generation completed successfully. Generated charts: Daily={daily_chart_path is not None}, Weekly={weekly_chart_path is not None}, Monthly={monthly_chart_path is not None}")
         return {
-            "Daily": daily_chart_path,
-            "Weekly": weekly_chart_path,
-            "Monthly": monthly_chart_path
+            "charts": {
+                "Daily": daily_chart_path,
+                "Weekly": weekly_chart_path,
+                "Monthly": monthly_chart_path
+            },
+            "data": df,  # 원본 데이터도 함께 반환
+            "end_date": end_date_from_data  # 데이터 종료 날짜도 반환
         }
     except Exception as e:
         logging.exception(f"Chart generation failed for {ticker}")

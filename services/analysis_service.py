@@ -348,6 +348,8 @@ def analyze_ticker_internal_logic(ticker, analysis_html_path):
     charts = {
         "Daily": None, "Weekly": None, "Monthly": None
     }
+    chart_data = None  # 차트 생성 시 사용된 데이터
+    chart_end_date = None  # 데이터 종료 날짜
     
     display_date = datetime.today().strftime("%Y-%m-%d")
 
@@ -367,11 +369,12 @@ def analyze_ticker_internal_logic(ticker, analysis_html_path):
         logging.info(f"[{ticker}] Chart files not found, generating charts first...")
         try:
             from services.chart_service import generate_chart
-            chart_paths = generate_chart(ticker)
-            logging.info(f"[{ticker}] Chart generation completed: {chart_paths}")
+            chart_result = generate_chart(ticker)
+            charts = chart_result["charts"]
+            chart_data = chart_result["data"]  # 차트 생성 시 사용된 데이터
+            chart_end_date = chart_result["end_date"]  # 데이터 종료 날짜
+            logging.info(f"[{ticker}] Chart generation completed: {charts}")
             
-            # 차트 생성 후 다시 파일 검색
-            charts = find_latest_chart_files(ticker)
             found_all_charts = all(charts[label] is not None for label in ["Daily", "Weekly", "Monthly"])
             
             if not found_all_charts:
@@ -474,9 +477,17 @@ def analyze_ticker_internal_logic(ticker, analysis_html_path):
             should_download_new_data = False
         
         if should_download_new_data:
-            # 새로 데이터 다운로드 + 지표 계산
-            logging.info(f"[{ticker}] Downloading fresh data and calculating new indicators...")
-            return analyze_ticker_with_fresh_data(ticker, display_date, charts, daily_b64, weekly_b64, monthly_b64, analysis_html_path)
+            # 장중시간이지만 차트 데이터가 있으면 재사용, 없으면 새로 다운로드
+            if chart_data is not None and not chart_data.empty:
+                logging.info(f"[{ticker}] Market hours but using chart data to avoid duplicate download")
+                # 차트 데이터의 날짜를 display_date로 사용
+                if chart_end_date:
+                    display_date = chart_end_date.strftime("%Y-%m-%d")
+                # 기존 저장된 지표 데이터를 사용하는 방식으로 처리
+                should_download_new_data = False
+            else:
+                logging.info(f"[{ticker}] Downloading fresh data and calculating new indicators...")
+                return analyze_ticker_with_fresh_data(ticker, display_date, charts, daily_b64, weekly_b64, monthly_b64, analysis_html_path)
         else:
             # 기존 저장된 데이터 사용
             logging.info(f"[{ticker}] Attempting to use existing saved indicator data...")

@@ -49,7 +49,9 @@ def safe_chart_generation(ticker, timeout_seconds=60):
     from services.chart_service import generate_chart
     
     def chart_func():
-        return generate_chart(ticker)
+        chart_result = generate_chart(ticker)
+        # 차트 경로만 반환 (기존 호환성 유지)
+        return chart_result["charts"]
     
     return timeout_wrapper(chart_func, timeout_seconds, f"Chart generation for {ticker}")
 

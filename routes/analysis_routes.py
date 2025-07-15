@@ -98,7 +98,9 @@ def stop_batch():
 @analysis_bp.route("/generate_chart/<ticker>")
 def generate_chart_route(ticker):
     try:
-        chart_paths = generate_chart(ticker)
+        chart_result = generate_chart(ticker)
+        # 차트 경로만 반환 (기존 호환성 유지)
+        chart_paths = chart_result["charts"]
         return jsonify(chart_paths), 200
     except Exception as e:
         logging.exception(f"Chart generation failed for {ticker}")

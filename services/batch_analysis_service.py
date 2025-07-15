@@ -10,7 +10,7 @@ from models import StockList, Stock, get_stock_list_path, get_analysis_summary_p
 from services.chart_service import generate_chart
 from services.progress_service import start_batch_progress, end_batch_progress, update_progress, is_stop_requested
 from utils.file_manager import get_date_folder_path
-from utils.timeout_utils import safe_chart_generation, safe_ai_analysis
+from utils.timeout_utils import safe_ai_analysis
 from utils.batch_recovery import start_batch_tracking, update_batch_progress, end_batch_tracking, check_and_recover_batches, get_batch_status
 from utils.memory_monitor import get_memory_status, log_current_memory_status, cleanup_memory
 from config import ANALYSIS_DIR, MULTI_SUMMARY_DIR, CHART_GENERATION_TIMEOUT, AI_ANALYSIS_TIMEOUT
@@ -205,15 +205,7 @@ def _process_tickers_batch(tickers_to_process, user, progress_id, summary_filena
                     break
 
                 try:
-                    # 1. Chart Generation with timeout
-                    chart_result = safe_chart_generation(ticker, CHART_GENERATION_TIMEOUT)
-                    if chart_result is None:
-                        raise TimeoutError("Chart generation timed out")
-                    
-                    # 종목 간 처리 간격 추가 (서버 부하 방지)
-                    time.sleep(2)
-                    
-                    # 2. AI Analysis with timeout
+                    # AI Analysis with timeout (차트 생성은 내부에서 처리)
                     from services.analysis_service import analyze_ticker_internal_logic
                     analysis_result = safe_ai_analysis(
                         analyze_ticker_internal_logic, 
@@ -487,12 +479,7 @@ def run_multiple_lists_analysis_with_user_id(list_names, user_id, user_is_admin)
                             break
 
                         try:
-                            # 1. Chart Generation with timeout
-                            chart_result = safe_chart_generation(ticker, CHART_GENERATION_TIMEOUT)
-                            if chart_result is None:
-                                raise TimeoutError("Chart generation timed out")
-                            
-                            # 2. AI Analysis with timeout
+                            # AI Analysis with timeout (차트 생성은 내부에서 처리)
                             from services.analysis_service import analyze_ticker_internal_logic
                             analysis_result = safe_ai_analysis(
                                 analyze_ticker_internal_logic, 
@@ -741,12 +728,7 @@ def run_multiple_lists_analysis_with_user_id(list_names, user_id, user_is_admin)
                             break
 
                         try:
-                            # 1. Chart Generation with timeout
-                            chart_result = safe_chart_generation(ticker, CHART_GENERATION_TIMEOUT)
-                            if chart_result is None:
-                                raise TimeoutError("Chart generation timed out")
-                            
-                            # 2. AI Analysis with timeout
+                            # AI Analysis with timeout (차트 생성은 내부에서 처리)
                             from services.analysis_service import analyze_ticker_internal_logic
                             analysis_result = safe_ai_analysis(
                                 analyze_ticker_internal_logic, 

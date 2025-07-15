@@ -175,20 +175,41 @@ def generate_all_charts_and_analysis_route(list_name):
         return jsonify({"error": "Authentication required"}), 401
     
     try:
-        # Celery 백그라운드 작업으로 일괄 분석 실행
-        task = run_batch_analysis_task.delay(list_name, current_user.id)
-        
-        logging.info(f"Batch analysis task started for list: {list_name}, task_id: {task.id}")
-        
-        return jsonify({
-            "success": True,
-            "message": f"일괄 분석이 백그라운드에서 시작되었습니다.",
-            "task_id": task.id,
-            "list_name": list_name
-        }), 202  # 202 Accepted - 작업이 수락되었지만 아직 완료되지 않음
+        # Celery 백그라운드 작업으로 일괄 분석 실행 시도
+        try:
+            task = run_batch_analysis_task.delay(list_name, current_user.id)
+            logging.info(f"Batch analysis task started for list: {list_name}, task_id: {task.id}")
+            
+            return jsonify({
+                "success": True,
+                "message": f"일괄 분석이 백그라운드에서 시작되었습니다.",
+                "task_id": task.id,
+                "list_name": list_name
+            }), 202  # 202 Accepted - 작업이 수락되었지만 아직 완료되지 않음
+            
+        except Exception as celery_error:
+            logging.warning(f"Celery 작업 실행 실패, 동기 방식으로 전환: {celery_error}")
+            
+            # Celery 실패 시 동기 방식으로 일괄 분석 실행
+            from services.batch_analysis_service import run_single_list_analysis
+            
+            # 백그라운드 스레드로 실행하여 응답 지연 방지
+            import threading
+            thread = threading.Thread(
+                target=run_single_list_analysis,
+                args=(list_name, current_user.id)
+            )
+            thread.daemon = True
+            thread.start()
+            
+            return jsonify({
+                "success": True,
+                "message": f"일괄 분석이 시작되었습니다. (동기 방식)",
+                "list_name": list_name
+            }), 202
         
     except Exception as e:
-        logging.exception(f"Error starting batch analysis task for list: {list_name}")
+        logging.exception(f"Error starting batch analysis for list: {list_name}")
         return jsonify({"error": f"일괄 분석 시작 실패: {str(e)}"}), 500
 
 @analysis_bp.route("/generate_multiple_lists_analysis", methods=["POST"])

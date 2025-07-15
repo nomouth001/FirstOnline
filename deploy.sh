@@ -45,6 +45,21 @@ echo -e "${GREEN}✅ 정적 파일 처리 완료${NC}"
 # 6. 서비스 재시작
 echo -e "${YELLOW}🔄 서비스 재시작 중...${NC}"
 
+# Redis 서비스 확인 및 시작
+if ! systemctl is-active --quiet redis; then
+    echo -e "${YELLOW}🔧 Redis 서비스 시작 중...${NC}"
+    sudo systemctl start redis
+fi
+
+# Celery 워커 재시작
+echo -e "${YELLOW}🔄 Celery 워커 재시작 중...${NC}"
+pkill -f "celery worker" || echo "실행 중인 Celery 워커가 없습니다."
+sleep 2
+
+# Celery 워커 백그라운드 실행
+nohup celery -A celery_app:get_celery_app worker --concurrency=2 --loglevel=info > celery-worker.log 2>&1 &
+echo -e "${GREEN}✅ Celery 워커 시작 완료${NC}"
+
 # systemd 서비스 재시작 시도
 if systemctl is-active --quiet newsletter-app; then
     sudo systemctl restart newsletter-app

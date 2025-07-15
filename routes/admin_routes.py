@@ -3,7 +3,7 @@ from flask import Blueprint, render_template, redirect, url_for, flash, request,
 from flask_login import login_required, current_user
 from models import db, User, StockList, AnalysisHistory, Stock
 from functools import wraps
-from services.analysis_service import start_bulk_analysis_task
+from tasks.newsletter_tasks import run_multiple_batch_analysis_task
 from utils.log_utils import LogStreamer, get_available_log_files, get_log_file_info
 from utils.memory_monitor import get_memory_status, get_process_memory_status
 from utils.batch_recovery import get_all_batch_status, check_and_recover_batches
@@ -384,12 +384,15 @@ def bulk_generate_for_user_lists(user_id):
         return jsonify({'success': False, 'error': '유효하지 않거나 권한이 없는 리스트가 포함되어 있습니다.'}), 403
 
     try:
+        # 리스트 이름 추출
+        list_names = [stock_list.name for stock_list in stock_lists]
+        
         # Celery를 사용하여 비동기적으로 일괄 분석 시작
-        task = start_bulk_analysis_task.delay(user_id, list_ids)
-        logger.info(f"관리자({current_user.username})가 사용자({user.username})의 {len(list_ids)}개 리스트에 대한 일괄 분석을 시작했습니다. Task ID: {task.id}")
+        task = run_multiple_batch_analysis_task.delay(list_names, user_id)
+        logger.info(f"관리자({current_user.username})가 사용자({user.username})의 {len(list_names)}개 리스트에 대한 일괄 분석을 시작했습니다. Task ID: {task.id}")
         return jsonify({
             'success': True, 
-            'message': f'{len(list_ids)}개 리스트에 대한 일괄 분석 작업이 백그라운드에서 시작되었습니다. 완료 시 알림을 받게 됩니다.',
+            'message': f'{len(list_names)}개 리스트에 대한 일괄 분석 작업이 백그라운드에서 시작되었습니다. 완료 시 알림을 받게 됩니다.',
             'task_id': task.id
         })
     except Exception as e:

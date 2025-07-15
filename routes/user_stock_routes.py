@@ -198,7 +198,8 @@ def bulk_generate(list_id):
     
     # 일괄 생성 로직 (기존 CSV 기반 기능을 데이터베이스 기반으로 수정)
     try:
-        from routes.analysis_routes import generate_chart_route, analyze_ticker_internal_logic
+        from routes.analysis_routes import generate_chart_route
+        from services.analysis_service import analyze_ticker_internal_logic
         from services.progress_service import start_batch_progress, end_batch_progress, update_progress, is_stop_requested
         
         tickers = [stock.ticker for stock in stocks]

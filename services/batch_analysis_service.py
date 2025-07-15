@@ -470,7 +470,12 @@ def run_multiple_lists_analysis(list_names, user):
                                 raise TimeoutError("Chart generation timed out")
                             
                             # 2. AI Analysis with timeout
-                            analysis_result = safe_ai_analysis(ticker, AI_ANALYSIS_TIMEOUT)
+                            from services.analysis_service import analyze_ticker_internal_logic
+                            analysis_result = safe_ai_analysis(
+                                analyze_ticker_internal_logic, 
+                                AI_ANALYSIS_TIMEOUT, 
+                                ticker=ticker
+                            )
                             if analysis_result is None:
                                 raise TimeoutError("AI analysis timed out")
 

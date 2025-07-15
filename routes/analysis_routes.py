@@ -321,8 +321,12 @@ def generate_multiple_lists_analysis_route():
         # DuplicateNodenameWarning 문제를 피하기 위해 Celery 사용하지 않고 직접 동기 방식으로 실행
         logging.info("Starting multiple lists analysis in synchronous mode (avoiding Celery issues)")
         
+        # 사용자 정보를 미리 저장 (Flask 컨텍스트 밖에서 접근하기 위해)
+        user_id = current_user.id
+        user_is_admin = current_user.is_admin
+        
         # 동기 방식으로 다중 리스트 분석 실행
-        from services.batch_analysis_service import run_multiple_lists_analysis
+        from services.batch_analysis_service import run_multiple_lists_analysis_with_user_id
         
         # 백그라운드 스레드로 실행하여 응답 지연 방지
         import threading
@@ -330,7 +334,7 @@ def generate_multiple_lists_analysis_route():
         def run_sync_analysis():
             try:
                 logging.info(f"Starting synchronous multiple lists analysis for: {list_names}")
-                result = run_multiple_lists_analysis(list_names, current_user)
+                result = run_multiple_lists_analysis_with_user_id(list_names, user_id, user_is_admin)
                 if result[0]:  # success
                     logging.info(f"Synchronous multiple lists analysis completed successfully: {result[1]}")
                 else:

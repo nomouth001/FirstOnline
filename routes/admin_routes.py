@@ -17,7 +17,7 @@ def admin_required(f):
     def decorated_function(*args, **kwargs):
         if not current_user.is_authenticated or not current_user.is_administrator():
             flash('어드민 권한이 필요합니다.', 'error')
-            return redirect(url_for('home'))
+            return redirect(url_for('index'))
         return f(*args, **kwargs)
     return decorated_function
 

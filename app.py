@@ -99,8 +99,13 @@ def create_app():
             else:
                 # 일반 사용자는 사용자 홈으로 리디렉션
                 return redirect(url_for('user_home'))
-        # 로그인하지 않은 사용자는 메인 인덱스 페이지로
-        return render_template('index.html')
+        # 로그인하지 않은 사용자는 로그인 페이지로 리디렉션
+        return redirect(url_for('auth.login'))
+    
+    # home 별칭 추가 (기존 코드 호환성)
+    @app.route('/home')
+    def home():
+        return index()
     
     # 사용자 홈 페이지
     @app.route('/user_home')

@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 def login():
     """로그인 페이지"""
     if current_user.is_authenticated:
-        return redirect(url_for('home'))
+        return redirect(url_for('index'))
     
     form = LoginForm()
     if form.validate_on_submit():
@@ -30,7 +30,7 @@ def login():
         
         next_page = request.args.get('next')
         if not next_page or urlparse(next_page).netloc != '':
-            next_page = url_for('home')
+            next_page = url_for('index')
         return redirect(next_page)
     
     return render_template('auth/login.html', title='로그인', form=form)
@@ -41,13 +41,13 @@ def logout():
     """로그아웃"""
     logger.info(f"사용자 로그아웃: {current_user.username}")
     logout_user()
-    return redirect(url_for('home'))
+    return redirect(url_for('index'))
 
 @auth_bp.route('/register', methods=['GET', 'POST'])
 def register():
     """회원가입 페이지"""
     if current_user.is_authenticated:
-        return redirect(url_for('home'))
+        return redirect(url_for('index'))
     
     form = RegistrationForm()
     if form.validate_on_submit():
@@ -129,7 +129,7 @@ def withdraw():
             
             # 로그아웃 처리
             logout_user()
-            return redirect(url_for('home'))
+            return redirect(url_for('index'))
         else:
             flash('탈퇴 확인에 체크해주세요.', 'error')
     

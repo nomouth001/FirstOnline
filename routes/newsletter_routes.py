@@ -34,7 +34,7 @@ def settings():
     except Exception as e:
         logger.error(f"뉴스레터 설정 페이지 오류: {e}")
         flash('설정을 불러오는 중 오류가 발생했습니다.', 'error')
-        return redirect(url_for('home'))
+        return redirect(url_for('index'))
 
 @newsletter_bp.route('/update_settings', methods=['POST'])
 @login_required
@@ -189,7 +189,7 @@ def unsubscribe(token):
         
         if not subscription:
             flash('유효하지 않은 구독 해제 링크입니다.', 'error')
-            return redirect(url_for('home'))
+            return redirect(url_for('index'))
         
         # 구독 해제 처리
         subscription.is_active = False
@@ -201,7 +201,7 @@ def unsubscribe(token):
     except Exception as e:
         logger.error(f"구독 해제 오류: {e}")
         flash('구독 해제 중 오류가 발생했습니다.', 'error')
-        return redirect(url_for('home'))
+        return redirect(url_for('index'))
 
 # 관리자용 뉴스레터 관리 라우트
 @newsletter_bp.route('/admin/send_bulk')
@@ -210,7 +210,7 @@ def admin_send_bulk():
     """관리자용 대량 뉴스레터 발송"""
     if not current_user.is_administrator():
         flash('관리자 권한이 필요합니다.', 'error')
-        return redirect(url_for('home'))
+        return redirect(url_for('index'))
     
     try:
         from models import User, NewsletterSubscription

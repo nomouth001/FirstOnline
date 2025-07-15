@@ -258,7 +258,6 @@ def run_batch_analysis_task(self, list_name, user_id):
     """지정된 주식 목록에 대한 일괄 분석을 실행하는 Celery 태스크"""
     logger.info(f"Starting batch analysis task for list: {list_name}, user: {user_id}")
     try:
-        # 이제 컨텍스트가 자동으로 설정되므로 with 구문이 필요 없습니다.
         user = User.query.get(user_id)
         if not user:
             raise ValueError(f"User with id {user_id} not found.")
@@ -322,7 +321,6 @@ def run_multiple_batch_analysis_task(self, list_names, user_id):
     """여러 주식 목록에 대한 일괄 분석을 실행하는 Celery 태스크"""
     logger.info(f"Starting multiple batch analysis task for lists: {list_names}, user: {user_id}")
     try:
-        # 여기도 with 구문이 필요 없습니다.
         user = User.query.get(user_id)
         if not user:
             raise ValueError(f"User with id {user_id} not found.")
@@ -338,7 +336,7 @@ def run_multiple_batch_analysis_task(self, list_names, user_id):
         results = {}
         all_summaries = {}
         
-        for stock_list in stock_lists: # Changed from list_name to stock_list
+        for stock_list in stock_lists:
             logger.info(f"Processing list: {stock_list.name}")
             
             # 개별 리스트 분석 실행
@@ -360,7 +358,7 @@ def run_multiple_batch_analysis_task(self, list_names, user_id):
             
     except Exception as e:
         logger.exception(f"Error in multiple batch analysis task for lists: {list_names}")
-        return {"error": f"Task execution failed: {str(e)}"} 
+        return {"error": f"Task execution failed: {str(e)}"}
 
 @celery_app.task(bind=True)
 def resume_batch_analysis_task(self, batch_id):

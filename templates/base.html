@@ -269,8 +269,8 @@
                 {% if current_user.is_authenticated %}
                     <li><a href="{{ url_for('user_stock.dashboard') }}" class="{% if request.endpoint.startswith('user_stock.') %}active{% endif %}">📊 대시보드</a></li>
                     <li><a href="{{ url_for('user_stock.stock_lists') }}">📋 종목 리스트</a></li>
-                    <li><a href="{{ url_for('summary_page') }}">📈 분석 요약</a></li>
-                    <li><a href="{{ url_for('multi_summary_page') }}">📊 다중 요약</a></li>
+                                    <li><a href="{{ url_for('summary') }}">📈 분석 요약</a></li>
+                <li><a href="{{ url_for('multi_summary') }}">📊 다중 요약</a></li>
                     {% if current_user.is_administrator() %}
                         <li><a href="{{ url_for('admin.admin_dashboard') }}" class="{% if request.endpoint.startswith('admin.') %}active{% endif %}">⚙️ 관리자</a></li>
                     {% endif %}

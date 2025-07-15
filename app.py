@@ -188,7 +188,7 @@ def create_app():
             logger.error(f"데이터베이스 초기화 오류: {e}")
     
     # 메모리 모니터링 초기화
-    initialize_memory_monitoring(app)
+    initialize_memory_monitoring()
     
     return app
 

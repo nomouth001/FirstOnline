@@ -2,31 +2,49 @@ import os
 import csv
 import json
 import logging
-from datetime import datetime
-from flask import Blueprint, request, jsonify, session, render_template, send_from_directory, flash, redirect, url_for, current_app
-from models import get_stock_list_path, get_analysis_summary_path, _extract_summary_from_analysis
-from services.chart_service import generate_chart
-from services.analysis_service import analyze_ticker_internal, analyze_ticker_internal_logic, is_valid_analysis_file, analyze_ticker_force_new
-from services.indicator_service import indicator_service
-from services.progress_service import start_batch_progress, end_batch_progress, update_progress, get_current_progress, request_stop, is_stop_requested, clear_stop_request
-from config import ANALYSIS_DIR, MULTI_SUMMARY_DIR, CHART_GENERATION_TIMEOUT, AI_ANALYSIS_TIMEOUT
-from utils.timeout_utils import safe_chart_generation, safe_ai_analysis
 import time
 import glob
-from utils.file_manager import get_date_folder_path, find_latest_analysis_file, get_all_analysis_dates, find_analysis_file_by_date
+from datetime import datetime
+from flask import Blueprint, request, jsonify, session, render_template, send_from_directory, flash, redirect, url_for, current_app
+from flask_login import login_required, current_user
+from celery.result import AsyncResult
+
+# Models and database
+from models import db, Stock, StockList, AnalysisHistory, User, get_stock_list_path, get_analysis_summary_path, _extract_summary_from_analysis
+
+# Services
+from services.analysis_service import analyze_ticker_internal, analyze_ticker_internal_logic, is_valid_analysis_file, analyze_ticker_force_new
+from services.chart_service import generate_chart
+from services.indicator_service import indicator_service
+from services.progress_service import start_batch_progress, end_batch_progress, update_progress, get_current_progress, request_stop, is_stop_requested, clear_stop_request
+from services.market_data_service import download_from_yahoo_finance
 from services.batch_analysis_service import run_single_list_analysis, run_multiple_lists_analysis
+
+# Tasks and Celery
 from tasks.newsletter_tasks import run_batch_analysis_task, run_multiple_batch_analysis_task, resume_batch_analysis_task
 from celery_app import get_celery_app
-from flask_login import login_required, current_user
-from models import db, Stock, StockList, AnalysisHistory, User
-from services.analysis_service import analyze_ticker_internal, get_analysis_summary, is_valid_analysis_file
-from services.chart_service import generate_chart_for_ticker
-from services.data_processing_service import download_from_yahoo_finance
-from services.batch_analysis_service import start_batch_analysis
-from celery.result import AsyncResult
+
+# Utils and config
+from utils.file_manager import get_date_folder_path, find_latest_analysis_file, get_all_analysis_dates, find_analysis_file_by_date
+from utils.timeout_utils import safe_chart_generation, safe_ai_analysis
+from config import ANALYSIS_DIR, MULTI_SUMMARY_DIR, CHART_GENERATION_TIMEOUT, AI_ANALYSIS_TIMEOUT
 
 # Blueprint 생성
 analysis_bp = Blueprint('analysis', __name__)
+
+# Celery 앱 인스턴스 가져오기 (필요한 경우)
+def get_celery_instance():
+    """Celery 인스턴스를 지연 로드합니다."""
+    return get_celery_app()
+
+# 누락된 함수들 추가
+def get_progress():
+    """진행 상황을 가져옵니다."""
+    return get_current_progress()
+
+def stop_batch():
+    """배치 작업을 중단합니다."""
+    return request_stop()
 
 @analysis_bp.route("/generate_chart/<ticker>")
 def generate_chart_route(ticker):
@@ -920,92 +938,6 @@ def force_new_analysis_with_timestamp(ticker):
     except Exception as e:
         logging.exception(f"Force new analysis with timestamp failed for {ticker}")
         return f"Error: Force new analysis failed for {ticker}: {e}", 500
-
-@analysis_bp.route("/get_indicator_data/<ticker>")
-def get_indicator_data_api(ticker):
-    """지표 데이터 API - 동적으로 지표 데이터를 가져올 때 사용"""
-    try:
-        ticker = ticker.upper()
-        from services.analysis_service import get_indicator_data_for_analysis
-        
-        indicator_data, crossover_data = get_indicator_data_for_analysis(ticker)
-        
-        if indicator_data is None:
-            return jsonify({"error": f"No indicator data found for {ticker}"}), 404
-        
-        return jsonify({
-            'ticker': ticker,
-            'indicator_data': indicator_data,
-            'crossover_data': crossover_data
-        }), 200
-        
-    except Exception as e:
-        logging.exception(f"Error getting indicator data for {ticker}")
-        return jsonify({"error": f"Failed to get indicator data for {ticker}: {str(e)}"}), 500
-
-@analysis_bp.route("/view_existing_chart/<ticker>")
-def view_existing_chart(ticker):
-    """기존 분석 파일을 보여줍니다."""
-    try:
-        ticker = ticker.upper()
-        today_date_str = datetime.today().strftime("%Y%m%d")
-        analysis_date_folder = get_date_folder_path(ANALYSIS_DIR, today_date_str)
-        
-        # 오늘 날짜의 모든 분석 파일 찾기 (타임스탬프 포함)
-        today_files = []
-        if os.path.exists(analysis_date_folder):
-            for file in os.listdir(analysis_date_folder):
-                if file.startswith(f"{ticker}_{today_date_str}") and file.endswith(".html"):
-                    today_files.append(file)
-        
-        # 가장 최신 파일 찾기 (타임스탬프 기준)
-        latest_file = None
-        if today_files:
-            def extract_timestamp(filename):
-                parts = filename.replace(f"{ticker}_{today_date_str}_", "").replace(".html", "")
-                if "_" in parts:
-                    return parts.split("_")[-1]
-                else:
-                    return "000000"
-            
-            today_files.sort(key=extract_timestamp, reverse=True)
-            latest_file = today_files[0]
-        
-        if latest_file:
-            existing_file_path = os.path.join(analysis_date_folder, latest_file)
-            if is_valid_analysis_file(existing_file_path):
-                return send_from_directory(analysis_date_folder, latest_file)
-            else:
-                return f"Error: Existing analysis file is invalid for {ticker}.", 500
-        else:
-            return f"Error: No existing analysis file found for {ticker}.", 404
-            
-    except Exception as e:
-        logging.exception(f"Error viewing existing chart for {ticker}")
-        return f"Error: Failed to view existing chart for {ticker}: {str(e)}", 500 
-    
-
-@analysis_bp.route('/start_batch/<list_name>', methods=['POST'])
-@login_required
-def start_batch_analysis_route(list_name):
-    from tasks.newsletter_tasks import run_batch_analysis_task # 함수 내에서 임포트
-    task = run_batch_analysis_task.delay(list_name, current_user.id)
-    return jsonify({"task_id": task.id})
-
-@analysis_bp.route('/generate_multiple_lists_analysis', methods=['POST'])
-@login_required
-def generate_multiple_lists_analysis_route():
-    from tasks.newsletter_tasks import run_multiple_batch_analysis_task # 함수 내에서 임포트
-    # ... (기존 로직 동일)
-    task = run_multiple_batch_analysis_task.delay(list_names, current_user.id)
-    # ... (기존 로직 동일)
-
-@analysis_bp.route('/resume_batch/<batch_id>', methods=['POST'])
-@login_required
-def resume_batch_analysis_route(batch_id):
-    from tasks.newsletter_tasks import resume_batch_analysis_task # 함수 내에서 임포트
-    task = resume_batch_analysis_task.delay(batch_id)
-    return jsonify({"task_id": task.id})
 
 @analysis_bp.route("/get_indicator_data/<ticker>")
 def get_indicator_data(ticker):

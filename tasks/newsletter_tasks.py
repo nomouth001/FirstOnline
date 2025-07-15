@@ -462,7 +462,7 @@ def resume_batch_analysis_task(self, batch_id):
                 "error": data.get("error", "Unknown error"),
                 "data": data
             }
-            
+
     except Exception as e:
         logger.exception(f"Error resuming batch analysis task: {batch_id}")
         return {"error": f"Task resume failed: {str(e)}"} 

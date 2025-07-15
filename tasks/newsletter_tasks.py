@@ -8,7 +8,10 @@ from services.email_service import email_service
 # from services.analysis_service import analyze_ticker_internal  # <- 이 줄은 주석 처리 또는 삭제
 from services.progress_service import start_batch_progress, update_progress, end_batch_progress, is_stop_requested
 from services.batch_analysis_service import _process_tickers_batch
-from flask import current_app
+from app import create_app  # <--- 이 부분을 추가합니다.
+
+# Flask 앱 인스턴스 생성
+flask_app = create_app()
 
 logger = logging.getLogger(__name__)
 
@@ -252,39 +255,29 @@ def send_bulk_newsletters(self, user_ids, newsletter_type='daily'):
 
 @celery_app.task(bind=True)
 def run_batch_analysis_task(self, list_name, user_id):
-    """
-    Celery 백그라운드 작업으로 일괄 분석 실행
-    """
+    """지정된 주식 목록에 대한 일괄 분석을 실행하는 Celery 태스크"""
+    logger.info(f"Starting batch analysis task for list: {list_name}, user: {user_id}")
     try:
-        logger.info(f"Starting batch analysis task for list: {list_name}, user: {user_id}")
-        
-        # Flask 애플리케이션 컨텍스트 설정
-        with current_app.app_context():
-            # 사용자 정보 확인
+        with flask_app.app_context():  # <--- current_app 대신 flask_app을 사용합니다.
             user = User.query.get(user_id)
             if not user:
-                logger.error(f"User not found: {user_id}")
-                return {"error": "User not found"}
-            
-            # 종목 리스트 확인
-            stock_list = StockList.query.filter_by(name=list_name).first()
+                raise ValueError(f"User with id {user_id} not found.")
+
+            stock_list = StockList.query.filter_by(name=list_name, user_id=user_id).first()
             if not stock_list:
-                logger.error(f"Stock list not found: {list_name}")
-                return {"error": "Stock list not found"}
-            
-            # 사용자 권한 확인
-            if not user.is_admin and stock_list.user_id != user.id:
-                logger.error(f"User {user_id} does not have access to list {list_name}")
-                return {"error": "Access denied"}
-            
-            # 종목 리스트 추출
-            tickers_to_process = [stock.ticker for stock in stock_list.stocks]
-            
-            if not tickers_to_process:
-                logger.warning(f"No tickers found in list: {list_name}")
-                return {"message": "No tickers found in the list"}
-            
-            logger.info(f"Processing {len(tickers_to_process)} tickers for list: {list_name}")
+                raise ValueError(f"Stock list '{list_name}' not found for user {user_id}.")
+
+            tickers = [stock.ticker for stock in stock_list.stocks]
+            if not tickers:
+                return {'status': 'Completed', 'message': 'No tickers in the list.'}
+
+            batch_id = start_batch_progress(
+                user_id=user_id,
+                list_name=list_name,
+                total_tickers=len(tickers),
+                task_id=self.request.id,
+                batch_type='single_list'
+            )
             
             # 진행 상황 업데이트 함수 정의
             def update_task_progress(current, total, status_message):
@@ -298,11 +291,11 @@ def run_batch_analysis_task(self, list_name, user_id):
                 )
             
             # 초기 진행 상황 업데이트
-            update_task_progress(0, len(tickers_to_process), f"일괄 분석 시작: {list_name}")
+            update_task_progress(0, len(tickers), f"일괄 분석 시작: {list_name}")
             
             # 기존 일괄 분석 로직 실행 (progress_callback 전달)
             success, data, status_code, summaries = _process_tickers_batch(
-                tickers_to_process, user, list_name, list_name, progress_callback=update_task_progress
+                tickers, user, list_name, list_name, progress_callback=update_task_progress
             )
             
             if success:
@@ -327,29 +320,31 @@ def run_batch_analysis_task(self, list_name, user_id):
 
 @celery_app.task(bind=True)
 def run_multiple_batch_analysis_task(self, list_names, user_id):
-    """
-    Celery 백그라운드 작업으로 다중 리스트 일괄 분석 실행
-    """
+    """여러 주식 목록에 대한 일괄 분석을 실행하는 Celery 태스크"""
+    logger.info(f"Starting multiple batch analysis task for lists: {list_names}, user: {user_id}")
     try:
-        logger.info(f"Starting multiple batch analysis task for lists: {list_names}, user: {user_id}")
-        
-        # Flask 애플리케이션 컨텍스트 설정
-        with current_app.app_context():
-            # 사용자 정보 확인
+        with flask_app.app_context(): # <--- current_app 대신 flask_app을 사용합니다.
             user = User.query.get(user_id)
             if not user:
-                logger.error(f"User not found: {user_id}")
-                return {"error": "User not found"}
+                raise ValueError(f"User with id {user_id} not found.")
+
+            stock_lists = StockList.query.filter(
+                StockList.user_id == user_id,
+                StockList.name.in_(list_names)
+            ).all()
+
+            if not stock_lists:
+                raise ValueError(f"No valid stock lists found for user {user_id}.")
             
             results = {}
             all_summaries = {}
             
-            for list_name in list_names:
-                logger.info(f"Processing list: {list_name}")
+            for stock_list in stock_lists: # Changed from list_name to stock_list
+                logger.info(f"Processing list: {stock_list.name}")
                 
                 # 개별 리스트 분석 실행
-                result = run_batch_analysis_task.apply(args=[list_name, user_id])
-                results[list_name] = result.result
+                result = run_batch_analysis_task.apply(args=[stock_list.name, user_id])
+                results[stock_list.name] = result.result
                 
                 # 성공한 경우 요약 정보 수집
                 if result.result.get("success") and result.result.get("summaries"):
@@ -370,53 +365,52 @@ def run_multiple_batch_analysis_task(self, list_names, user_id):
 
 @celery_app.task(bind=True)
 def resume_batch_analysis_task(self, batch_id):
-    """
-    중단된 Celery 배치 분석 작업 재시작
-    """
+    """중단된 일괄 분석 작업을 재개하는 Celery 태스크"""
+    logger.info(f"Resuming batch analysis task for batch_id: {batch_id}")
     try:
-        logger.info(f"Resuming batch analysis task: {batch_id}")
-        
-        # Flask 애플리케이션 컨텍스트 설정
-        with current_app.app_context():
-            from utils.batch_recovery import get_recovery_manager
+        with flask_app.app_context(): # <--- current_app 대신 flask_app을 사용합니다.
+            from services.batch_analysis_service import get_batch_progress, update_batch_task_id
             
-            recovery_manager = get_recovery_manager()
-            batch_state = recovery_manager.load_batch_state(batch_id)
-            
-            if not batch_state:
-                logger.error(f"Batch state not found for: {batch_id}")
-                return {"error": "Batch state not found"}
+            progress = get_batch_progress(batch_id)
+            if not progress or progress['status'] not in ['stopped', 'error']:
+                raise ValueError(f"Batch {batch_id} cannot be resumed.")
+
+            update_batch_task_id(batch_id, self.request.id)
+
+            user_id = progress['user_id']
+            list_name = progress['list_name']
             
             # 사용자 정보 확인
-            user = User.query.get(batch_state.user_id)
+            user = User.query.get(user_id)
             if not user:
-                logger.error(f"User not found: {batch_state.user_id}")
-                return {"error": "User not found"}
+                raise ValueError(f"User with id {user_id} not found.")
             
             # 처리할 종목 리스트 재구성 (이미 처리된 종목 제외)
             remaining_tickers = []
-            for list_name in batch_state.list_names:
-                stock_list = StockList.query.filter_by(name=list_name).first()
-                if stock_list:
-                    all_tickers = [stock.ticker for stock in stock_list.stocks]
-                    # 이미 처리된 종목 제외
-                    for ticker in all_tickers:
-                        if ticker not in batch_state.failed_tickers:
-                            # 실제로 분석 파일이 존재하는지 확인
-                            from services.analysis_service import is_valid_analysis_file
-                            from utils.file_manager import get_date_folder_path
-                            from config import ANALYSIS_DIR
-                            from datetime import datetime
-                            
-                            today_date_str = datetime.today().strftime("%Y%m%d")
-                            analysis_date_folder = get_date_folder_path(ANALYSIS_DIR, today_date_str)
-                            
-                            if not is_valid_analysis_file(ticker, analysis_date_folder):
-                                remaining_tickers.append(ticker)
+            stock_list = StockList.query.filter_by(name=list_name, user_id=user_id).first()
+            if stock_list:
+                all_tickers = [stock.ticker for stock in stock_list.stocks]
+                # 이미 처리된 종목 제외
+                for ticker in all_tickers:
+                    if ticker not in progress.get('failed_tickers', []): # Use progress['failed_tickers']
+                        # 실제로 분석 파일이 존재하는지 확인
+                        from services.analysis_service import is_valid_analysis_file
+                        from utils.file_manager import get_date_folder_path
+                        from config import ANALYSIS_DIR
+                        from datetime import datetime
+                        
+                        today_date_str = datetime.today().strftime("%Y%m%d")
+                        analysis_date_folder = get_date_folder_path(ANALYSIS_DIR, today_date_str)
+                        
+                        if not is_valid_analysis_file(ticker, analysis_date_folder):
+                            remaining_tickers.append(ticker)
             
             if not remaining_tickers:
                 logger.info(f"No remaining tickers to process for batch: {batch_id}")
-                recovery_manager.mark_batch_completed(batch_id, True, "All tickers already processed")
+                # Use progress_manager to mark batch completed
+                from services.progress_service import get_progress_manager
+                progress_manager = get_progress_manager()
+                progress_manager.mark_batch_completed(batch_id, True, "All tickers already processed")
                 return {"success": True, "message": "All tickers already processed"}
             
             logger.info(f"Resuming batch with {len(remaining_tickers)} remaining tickers")
@@ -426,8 +420,8 @@ def resume_batch_analysis_task(self, batch_id):
                 self.update_state(
                     state='PROGRESS',
                     meta={
-                        'current': batch_state.processed_tickers + current,
-                        'total': batch_state.total_tickers,
+                        'current': progress.get('processed_tickers', 0) + current, # Use progress['processed_tickers']
+                        'total': progress.get('total_tickers', 0), # Use progress['total_tickers']
                         'status': status_message
                     }
                 )
@@ -436,9 +430,13 @@ def resume_batch_analysis_task(self, batch_id):
             update_task_progress(0, len(remaining_tickers), f"배치 재시작: {batch_id}")
             
             # 배치 상태 업데이트
-            batch_state.status = 'running'
-            batch_state.recovery_count += 1
-            recovery_manager.save_batch_state(batch_state)
+            # Use progress_manager to update batch state
+            progress_manager = get_progress_manager()
+            batch_state = progress_manager.load_batch_state(batch_id)
+            if batch_state:
+                batch_state.status = 'running'
+                batch_state.recovery_count += 1
+                progress_manager.save_batch_state(batch_state)
             
             # 남은 종목들 처리
             success, data, status_code, summaries = _process_tickers_batch(
@@ -447,7 +445,8 @@ def resume_batch_analysis_task(self, batch_id):
             
             if success:
                 logger.info(f"Batch analysis resumed and completed successfully: {batch_id}")
-                recovery_manager.mark_batch_completed(batch_id, True)
+                # Use progress_manager to mark batch completed
+                progress_manager.mark_batch_completed(batch_id, True)
                 return {
                     "success": True,
                     "message": f"Batch analysis resumed and completed: {batch_id}",
@@ -456,7 +455,8 @@ def resume_batch_analysis_task(self, batch_id):
                 }
             else:
                 logger.error(f"Batch analysis resume failed: {batch_id}")
-                recovery_manager.mark_batch_completed(batch_id, False, data.get("error", "Unknown error"))
+                # Use progress_manager to mark batch completed with error
+                progress_manager.mark_batch_completed(batch_id, False, data.get("error", "Unknown error"))
                 return {
                     "success": False,
                     "error": data.get("error", "Unknown error"),

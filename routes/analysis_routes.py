@@ -15,6 +15,8 @@ import time
 import glob
 from utils.file_manager import get_date_folder_path, find_latest_analysis_file, get_all_analysis_dates, find_analysis_file_by_date
 from services.batch_analysis_service import run_single_list_analysis, run_multiple_lists_analysis
+from tasks.newsletter_tasks import run_batch_analysis_task, run_multiple_batch_analysis_task, resume_batch_analysis_task
+from celery_app import celery_app
 
 # Blueprint 생성
 analysis_bp = Blueprint('analysis', __name__)
@@ -147,12 +149,22 @@ def generate_all_charts_and_analysis_route(list_name):
     if not current_user.is_authenticated:
         return jsonify({"error": "Authentication required"}), 401
     
-    success, data, status_code = run_single_list_analysis(list_name, current_user)
-    
-    if not success:
-        return jsonify({"error": data}), status_code
+    try:
+        # Celery 백그라운드 작업으로 일괄 분석 실행
+        task = run_batch_analysis_task.delay(list_name, current_user.id)
         
-    return jsonify(data), status_code
+        logging.info(f"Batch analysis task started for list: {list_name}, task_id: {task.id}")
+        
+        return jsonify({
+            "success": True,
+            "message": f"일괄 분석이 백그라운드에서 시작되었습니다.",
+            "task_id": task.id,
+            "list_name": list_name
+        }), 202  # 202 Accepted - 작업이 수락되었지만 아직 완료되지 않음
+        
+    except Exception as e:
+        logging.exception(f"Error starting batch analysis task for list: {list_name}")
+        return jsonify({"error": f"일괄 분석 시작 실패: {str(e)}"}), 500
 
 @analysis_bp.route("/generate_multiple_lists_analysis", methods=["POST"])
 def generate_multiple_lists_analysis_route():
@@ -189,17 +201,18 @@ def generate_multiple_lists_analysis_route():
         
         logging.info(f"Selected lists: {list_names}")
         
-        # 여러 리스트 분석 실행
-        logging.info("Calling run_multiple_lists_analysis")
-        success, result_data, status_code = run_multiple_lists_analysis(list_names, current_user)
+        # 여러 리스트 분석을 Celery 백그라운드 작업으로 실행
+        logging.info("Starting multiple lists analysis with Celery")
+        task = run_multiple_batch_analysis_task.delay(list_names, current_user.id)
         
-        # 결과 반환
-        if not success:
-            logging.error(f"Analysis failed: {result_data}")
-            return jsonify({"error": result_data}), status_code
+        logging.info(f"Multiple batch analysis task started for lists: {list_names}, task_id: {task.id}")
         
-        logging.info("Analysis completed successfully")
-        return jsonify(result_data), status_code
+        return jsonify({
+            "success": True,
+            "message": f"{len(list_names)}개 리스트의 일괄 분석이 백그라운드에서 시작되었습니다.",
+            "task_id": task.id,
+            "list_names": list_names
+        }), 202  # 202 Accepted - 작업이 수락되었지만 아직 완료되지 않음
         
     except json.JSONDecodeError as e:
         logging.exception("JSON decode error in generate_multiple_lists_analysis_route")
@@ -746,6 +759,146 @@ def stop_batch_processing():
     except Exception as e:
         logging.exception("Error requesting batch stop")
         return jsonify({"error": f"중단 요청 실패: {str(e)}"}), 500
+
+@analysis_bp.route("/task_status/<task_id>", methods=["GET"])
+def get_task_status(task_id):
+    """Celery 작업의 상태를 확인합니다."""
+    from flask_login import current_user
+    if not current_user.is_authenticated:
+        return jsonify({"error": "Authentication required"}), 401
+    
+    try:
+        task = celery_app.AsyncResult(task_id)
+        
+        if task.state == 'PENDING':
+            response = {
+                'state': task.state,
+                'status': '작업이 대기 중입니다...'
+            }
+        elif task.state == 'PROGRESS':
+            response = {
+                'state': task.state,
+                'current': task.info.get('current', 0),
+                'total': task.info.get('total', 1),
+                'status': task.info.get('status', '')
+            }
+        elif task.state == 'SUCCESS':
+            response = {
+                'state': task.state,
+                'result': task.info
+            }
+        else:  # FAILURE
+            response = {
+                'state': task.state,
+                'error': str(task.info)
+            }
+        
+        return jsonify(response)
+        
+    except Exception as e:
+        logging.exception(f"Error getting task status for task_id: {task_id}")
+        return jsonify({"error": f"작업 상태 확인 실패: {str(e)}"}), 500
+
+@analysis_bp.route("/cancel_task/<task_id>", methods=["POST"])
+def cancel_task(task_id):
+    """Celery 작업을 취소합니다."""
+    from flask_login import current_user
+    if not current_user.is_authenticated:
+        return jsonify({"error": "Authentication required"}), 401
+    
+    try:
+        celery_app.control.revoke(task_id, terminate=True)
+        logging.info(f"Task cancelled: {task_id}")
+        return jsonify({"message": "작업이 취소되었습니다."}), 200
+        
+    except Exception as e:
+        logging.exception(f"Error cancelling task: {task_id}")
+        return jsonify({"error": f"작업 취소 실패: {str(e)}"}), 500
+
+@analysis_bp.route("/resume_batch/<batch_id>", methods=["POST"])
+def resume_batch_analysis(batch_id):
+    """중단된 배치 분석을 재시작합니다."""
+    from flask_login import current_user
+    if not current_user.is_authenticated:
+        return jsonify({"error": "Authentication required"}), 401
+    
+    try:
+        # 배치 상태 확인
+        from utils.batch_recovery import get_recovery_manager
+        recovery_manager = get_recovery_manager()
+        batch_state = recovery_manager.load_batch_state(batch_id)
+        
+        if not batch_state:
+            return jsonify({"error": "배치 상태를 찾을 수 없습니다."}), 404
+        
+        # 사용자 권한 확인
+        if not current_user.is_admin and batch_state.user_id != current_user.id:
+            return jsonify({"error": "권한이 없습니다."}), 403
+        
+        # 재시작 가능한 상태인지 확인
+        if batch_state.status in ['completed', 'running']:
+            return jsonify({"error": f"배치가 이미 {batch_state.status} 상태입니다."}), 400
+        
+        # Celery 작업으로 재시작
+        task = resume_batch_analysis_task.delay(batch_id)
+        
+        logging.info(f"Batch analysis resume task started: {batch_id}, task_id: {task.id}")
+        
+        return jsonify({
+            "success": True,
+            "message": f"배치 분석 재시작이 백그라운드에서 시작되었습니다.",
+            "task_id": task.id,
+            "batch_id": batch_id
+        }), 202
+        
+    except Exception as e:
+        logging.exception(f"Error resuming batch analysis: {batch_id}")
+        return jsonify({"error": f"배치 재시작 실패: {str(e)}"}), 500
+
+@analysis_bp.route("/batch_status/<batch_id>", methods=["GET"])
+def get_batch_status(batch_id):
+    """배치 상태를 확인합니다."""
+    from flask_login import current_user
+    if not current_user.is_authenticated:
+        return jsonify({"error": "Authentication required"}), 401
+    
+    try:
+        from utils.batch_recovery import get_batch_status
+        status = get_batch_status(batch_id)
+        
+        return jsonify(status)
+        
+    except Exception as e:
+        logging.exception(f"Error getting batch status: {batch_id}")
+        return jsonify({"error": f"배치 상태 확인 실패: {str(e)}"}), 500
+
+@analysis_bp.route("/recoverable_batches", methods=["GET"])
+def get_recoverable_batches():
+    """복구 가능한 배치 목록을 반환합니다."""
+    from flask_login import current_user
+    if not current_user.is_authenticated:
+        return jsonify({"error": "Authentication required"}), 401
+    
+    try:
+        from utils.batch_recovery import check_and_recover_batches, get_recovery_manager
+        
+        recovery_manager = get_recovery_manager()
+        recoverable_batches = recovery_manager.get_recoverable_batches()
+        
+        # 사용자 권한에 따라 필터링
+        user_batches = []
+        for batch_state in recoverable_batches:
+            if current_user.is_admin or batch_state.user_id == current_user.id:
+                user_batches.append(batch_state.to_dict())
+        
+        return jsonify({
+            "recoverable_batches": user_batches,
+            "count": len(user_batches)
+        })
+        
+    except Exception as e:
+        logging.exception("Error getting recoverable batches")
+        return jsonify({"error": f"복구 가능한 배치 조회 실패: {str(e)}"}), 500
 
 @analysis_bp.route("/force_new_analysis_with_timestamp/<ticker>")
 def force_new_analysis_with_timestamp(ticker):

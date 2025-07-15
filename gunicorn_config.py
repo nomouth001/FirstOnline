@@ -12,8 +12,8 @@ workers = multiprocessing.cpu_count() * 2 + 1  # CPU 코어 수 * 2 + 1 (원래 
 worker_class = "sync"  # 동기 워커 (AI 분석용)
 worker_connections = 1000  # 연결 수 제한 (원래 설정으로 복원)
 
-# 타임아웃 설정
-timeout = 180  # 타임아웃 증가 (120초에서 180초로)
+# 타임아웃 설정 - 일괄 분석이 Celery로 이동했으므로 기본값으로 복원
+timeout = 30  # 웹 요청 타임아웃 (Celery 사용으로 단축)
 graceful_timeout = 30  # 정상 종료 대기 시간
 keepalive = 2  # Keep-alive 연결 유지 시간
 

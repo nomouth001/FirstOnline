@@ -3,6 +3,9 @@
 Yahoo Finance, Alpha Vantage 등 다양한 데이터 소스 지원
 """
 
+import os
+import csv
+import json
 import logging
 import time
 import requests
@@ -11,6 +14,15 @@ import yfinance as yf
 import FinanceDataReader as fdr
 from datetime import datetime, timedelta
 from config import ALTERNATIVE_APIS
+
+# 커스텀 예외 클래스 추가
+class RateLimitError(Exception):
+    """Rate limit 오류를 위한 커스텀 예외"""
+    pass
+
+class YahooFinanceError(Exception):
+    """Yahoo Finance 특정 오류를 위한 커스텀 예외"""
+    pass
 
 
 def normalize_alpha_vantage_data(data_json, ticker):
@@ -318,6 +330,7 @@ class RateLimitError(Exception):
 def download_from_yahoo_finance(ticker, start_date, end_date, max_retries=3, delay=2):
     """
     Yahoo Finance에서 데이터 다운로드 (429 에러 시 즉시 폴백)
+    HTTP 상태코드 기반 오류 처리 개선
     """
     for attempt in range(max_retries):
         try:
@@ -331,7 +344,28 @@ def download_from_yahoo_finance(ticker, start_date, end_date, max_retries=3, del
             
             # User-Agent 헤더 추가하여 브라우저로 위장
             stock = yf.Ticker(ticker)
-            stock_data = stock.history(start=start_date, end=end_date, auto_adjust=False)
+            
+            # yfinance 내부에서 발생하는 HTTP 오류를 직접 캐치하기 위해 세션 확인
+            try:
+                stock_data = stock.history(start=start_date, end=end_date, auto_adjust=False)
+            except Exception as yf_error:
+                # yfinance 내부 오류를 분석하여 HTTP 상태코드 추출
+                error_str = str(yf_error)
+                
+                # HTTP 429 오류 직접 감지
+                if '429' in error_str or 'Too Many Requests' in error_str:
+                    logging.warning(f"[{ticker}] HTTP 429 (Too Many Requests) detected from Yahoo Finance")
+                    raise RateLimitError(f"Yahoo Finance rate limit exceeded: {error_str}")
+                
+                # JSON 파싱 오류가 429와 함께 발생하는 경우
+                if 'Expecting value: line 1 column 1' in error_str:
+                    logging.warning(f"[{ticker}] JSON parsing error detected - likely due to rate limiting")
+                    # 이 경우 로그에서 HTTP 상태코드 확인을 위해 추가 정보 출력
+                    logging.warning(f"[{ticker}] Full error details: {error_str}")
+                    raise RateLimitError(f"Yahoo Finance JSON parsing error (likely rate limit): {error_str}")
+                
+                # 기타 yfinance 오류는 다시 발생시킴
+                raise yf_error
             
             if not stock_data.empty:
                 logging.info(f"[{ticker}] Chart data downloaded successfully. Shape: {stock_data.shape}")
@@ -339,13 +373,16 @@ def download_from_yahoo_finance(ticker, start_date, end_date, max_retries=3, del
             else:
                 logging.warning(f"[{ticker}] Empty chart data received on attempt {attempt + 1}")
                 
+        except RateLimitError:
+            # Rate limit 오류는 즉시 다음 API로 폴백
+            raise
         except Exception as e:
             error_msg = str(e).lower()
             logging.warning(f"[{ticker}] Chart data download attempt {attempt + 1} failed: {str(e)}")
             
-            # 429 오류나 rate limit 관련 오류인 경우 즉시 Alpha Vantage로 폴백
-            if '429' in error_msg or 'rate' in error_msg or 'too many' in error_msg:
-                logging.warning(f"[{ticker}] Rate limit detected (429), switching to Alpha Vantage immediately")
+            # 추가적인 rate limit 관련 키워드 검사
+            if any(keyword in error_msg for keyword in ['429', 'rate', 'too many', 'quota', 'limit']):
+                logging.warning(f"[{ticker}] Rate limit detected in error message, switching to next API immediately")
                 raise RateLimitError(f"Yahoo Finance rate limit exceeded: {str(e)}")
             else:
                 # 다른 에러의 경우 기존 시퀀스 유지
@@ -355,7 +392,7 @@ def download_from_yahoo_finance(ticker, start_date, end_date, max_retries=3, del
                     time.sleep(wait_time)
                 else:
                     logging.error(f"[{ticker}] All download attempts failed")
-                    raise e
+                    raise YahooFinanceError(f"Yahoo Finance download failed after {max_retries} attempts: {str(e)}")
     
     return pd.DataFrame()  # 빈 DataFrame 반환
 

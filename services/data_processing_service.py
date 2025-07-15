@@ -11,9 +11,15 @@ from ta.trend import IchimokuIndicator
 import time
 import requests
 
+# 커스텀 예외 클래스 추가
+class RateLimitError(Exception):
+    """Rate limit 오류를 위한 커스텀 예외"""
+    pass
+
 def download_stock_data_with_retry(ticker, start_date, end_date, max_retries=3, delay=2):
     """
     yfinance API 호출 제한 문제를 해결하기 위한 retry 로직이 포함된 데이터 다운로드 함수
+    HTTP 상태코드 기반 오류 처리 개선
     """
     for attempt in range(max_retries):
         try:
@@ -21,7 +27,25 @@ def download_stock_data_with_retry(ticker, start_date, end_date, max_retries=3, 
             
             # yfinance가 자체 세션을 사용하도록 세션 파라미터 제거
             ticker_obj = yf.Ticker(ticker)
-            stock_data = ticker_obj.history(start=start_date, end=end_date, auto_adjust=False)
+            
+            try:
+                stock_data = ticker_obj.history(start=start_date, end=end_date, auto_adjust=False)
+            except Exception as yf_error:
+                # yfinance 내부 오류를 분석하여 HTTP 상태코드 추출
+                error_str = str(yf_error)
+                
+                # HTTP 429 오류 직접 감지
+                if '429' in error_str or 'Too Many Requests' in error_str:
+                    logging.warning(f"[{ticker}] HTTP 429 (Too Many Requests) detected in data processing")
+                    raise RateLimitError(f"Yahoo Finance rate limit exceeded: {error_str}")
+                
+                # JSON 파싱 오류가 429와 함께 발생하는 경우
+                if 'Expecting value: line 1 column 1' in error_str:
+                    logging.warning(f"[{ticker}] JSON parsing error detected in data processing - likely due to rate limiting")
+                    raise RateLimitError(f"Yahoo Finance JSON parsing error (likely rate limit): {error_str}")
+                
+                # 기타 yfinance 오류는 다시 발생시킴
+                raise yf_error
             
             if not stock_data.empty:
                 logging.info(f"[{ticker}] Data processing data downloaded successfully. Shape: {stock_data.shape}")
@@ -29,27 +53,27 @@ def download_stock_data_with_retry(ticker, start_date, end_date, max_retries=3, 
             else:
                 logging.warning(f"[{ticker}] Empty data processing data received on attempt {attempt + 1}")
                 
+        except RateLimitError:
+            # Rate limit 오류는 즉시 빈 DataFrame 반환하여 처리 건너뛰기
+            logging.warning(f"[{ticker}] Rate limit detected (429), skipping data processing")
+            return pd.DataFrame()
         except Exception as e:
             error_msg = str(e).lower()
             logging.warning(f"[{ticker}] Data processing download attempt {attempt + 1} failed: {str(e)}")
             
-            # 429 오류나 rate limit 관련 오류인 경우 더 긴 대기
-            if '429' in error_msg or 'rate' in error_msg or 'too many' in error_msg:
-                if attempt < max_retries - 1:
-                    wait_time = delay * (3 ** attempt)  # 429 오류 시 더 긴 대기
-                    logging.info(f"[{ticker}] Rate limit detected, waiting {wait_time} seconds before retry...")
-                    time.sleep(wait_time)
-                else:
-                    logging.error(f"[{ticker}] Rate limit exceeded, all attempts failed")
-                    raise e
+            # 추가적인 rate limit 관련 키워드 검사
+            if any(keyword in error_msg for keyword in ['429', 'rate', 'too many', 'quota', 'limit']):
+                logging.warning(f"[{ticker}] Rate limit detected in error message, skipping data processing")
+                return pd.DataFrame()  # 빈 DataFrame 반환하여 처리 건너뛰기
             else:
+                # 다른 에러의 경우 재시도
                 if attempt < max_retries - 1:
-                    wait_time = delay * (2 ** attempt)  # 일반 오류 시 지수 백오프
+                    wait_time = delay * (2 ** attempt)  # 지수 백오프
                     logging.info(f"[{ticker}] Waiting {wait_time} seconds before retry...")
                     time.sleep(wait_time)
                 else:
-                    logging.error(f"[{ticker}] All download attempts failed")
-                    raise e
+                    logging.error(f"[{ticker}] All data processing download attempts failed")
+                    return pd.DataFrame()  # 빈 DataFrame 반환
     
     return pd.DataFrame()  # 빈 DataFrame 반환
 

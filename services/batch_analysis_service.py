@@ -132,10 +132,13 @@ def extract_new_summary(ticker):
         logging.error(f"Error extracting new summary for {ticker}: {e}")
         return None
 
-def _process_tickers_batch(tickers_to_process, user, progress_id, summary_filename):
+def _process_tickers_batch(tickers_to_process, user, progress_id, summary_filename, progress_callback=None):
     """
     Processes a list of tickers for chart generation and AI analysis.
     Includes timeout, retries, and stop requests.
+    
+    Args:
+        progress_callback: Optional callback function to update progress (current, total, message)
     """
     results = []
     all_summaries = {}
@@ -167,6 +170,10 @@ def _process_tickers_batch(tickers_to_process, user, progress_id, summary_filena
 
             logging.info(f"Processing ticker {i}/{total_tickers}: {ticker} from list(s): {progress_id}")
             update_progress(ticker=ticker, processed=i, total=total_tickers, list_name=progress_id)
+            
+            # Celery 작업 진행 상황 업데이트
+            if progress_callback:
+                progress_callback(i-1, total_tickers, f"처리 중: {ticker} ({i}/{total_tickers})")
             
             # 서버 부하 방지: 연속 처리 종목 수 제한
             processing_count += 1

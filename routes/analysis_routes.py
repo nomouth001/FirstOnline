@@ -334,11 +334,14 @@ def generate_multiple_lists_analysis_route():
         def run_sync_analysis():
             try:
                 logging.info(f"Starting synchronous multiple lists analysis for: {list_names}")
-                result = run_multiple_lists_analysis_with_user_id(list_names, user_id, user_is_admin)
-                if result[0]:  # success
-                    logging.info(f"Synchronous multiple lists analysis completed successfully: {result[1]}")
-                else:
-                    logging.error(f"Synchronous multiple lists analysis failed: {result[1]}")
+                # Flask 애플리케이션 컨텍스트 설정
+                from flask import current_app
+                with current_app.app_context():
+                    result = run_multiple_lists_analysis_with_user_id(list_names, user_id, user_is_admin)
+                    if result[0]:  # success
+                        logging.info(f"Synchronous multiple lists analysis completed successfully: {result[1]}")
+                    else:
+                        logging.error(f"Synchronous multiple lists analysis failed: {result[1]}")
             except Exception as e:
                 logging.exception(f"Error in synchronous multiple lists analysis: {e}")
         

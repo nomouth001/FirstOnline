@@ -263,9 +263,9 @@
 <body>
     <nav class="navbar">
         <div class="navbar-container">
-            <a href="{{ url_for('home') }}" class="navbar-brand">📈 주식 분석 시스템</a>
+            <a href="{{ url_for('index') }}" class="navbar-brand">📈 주식 분석 시스템</a>
             <ul class="navbar-nav">
-                <li><a href="{{ url_for('home') }}" class="{% if request.endpoint == 'home' %}active{% endif %}">🏠 홈</a></li>
+                <li><a href="{{ url_for('index') }}" class="{% if request.endpoint == 'index' %}active{% endif %}">🏠 홈</a></li>
                 {% if current_user.is_authenticated %}
                     <li><a href="{{ url_for('user_stock.dashboard') }}" class="{% if request.endpoint.startswith('user_stock.') %}active{% endif %}">📊 대시보드</a></li>
                     <li><a href="{{ url_for('user_stock.stock_lists') }}">📋 종목 리스트</a></li>

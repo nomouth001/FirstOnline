@@ -835,7 +835,7 @@ def cancel_task(task_id):
         get_celery_instance().control.revoke(task_id, terminate=True)
         logging.info(f"Task cancelled: {task_id}")
         return jsonify({"message": "작업이 취소되었습니다."}), 200
-        
+            
     except Exception as e:
         logging.exception(f"Error cancelling task: {task_id}")
         return jsonify({"error": f"작업 취소 실패: {str(e)}"}), 500

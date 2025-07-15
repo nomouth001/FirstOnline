@@ -477,8 +477,33 @@ def analyze_ticker_internal_logic(ticker, analysis_html_path):
             should_download_new_data = False
         
         if should_download_new_data:
-            # 장중시간이지만 차트 데이터가 있으면 재사용, 없으면 새로 다운로드
-            if chart_data is not None and not chart_data.empty:
+            # 장중시간이지만 차트가 존재하고 지표 데이터가 있으면 중복 다운로드 방지
+            if found_all_charts:
+                # 차트가 이미 존재하면 최근 저장된 지표 데이터가 있는지 확인
+                from services.indicator_service import indicator_service
+                recent_ohlcv = indicator_service.get_latest_indicator_data(ticker, "ohlcv", "d", rows=1)
+                
+                # 오늘 날짜의 지표 파일이 있는지도 확인 (파일 시스템 레벨에서)
+                import os
+                from config import INDICATOR_DIR
+                from utils.file_manager import get_date_folder_path
+                today_str = datetime.now().strftime("%Y%m%d")
+                indicator_folder = get_date_folder_path(INDICATOR_DIR, today_str)
+                ohlcv_pattern = f"{ticker}_ohlcv_d_{today_str}_*.csv"
+                import glob
+                existing_files = glob.glob(os.path.join(indicator_folder, ohlcv_pattern))
+                
+                if (recent_ohlcv is not None and not recent_ohlcv.empty) or existing_files:
+                    if existing_files:
+                        logging.info(f"[{ticker}] Market hours but found today's indicator files: {len(existing_files)} files - avoiding duplicate download")
+                    else:
+                        logging.info(f"[{ticker}] Market hours but charts and indicators exist - avoiding duplicate download")
+                    # 기존 저장된 지표 데이터를 사용하는 방식으로 처리
+                    should_download_new_data = False
+                else:
+                    logging.info(f"[{ticker}] Charts exist but no recent indicator data - downloading fresh data")
+                    return analyze_ticker_with_fresh_data(ticker, display_date, charts, daily_b64, weekly_b64, monthly_b64, analysis_html_path)
+            elif chart_data is not None and not chart_data.empty:
                 logging.info(f"[{ticker}] Market hours but using chart data to avoid duplicate download")
                 # 차트 데이터의 날짜를 display_date로 사용
                 if chart_end_date:

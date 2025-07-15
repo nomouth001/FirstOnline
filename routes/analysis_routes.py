@@ -713,6 +713,16 @@ def get_multi_summary_data(file_id):
         logging.exception(f"Error getting multi summary data for file {file_id}")
         return jsonify({"error": f"Failed to get summary data: {str(e)}"}), 500
 
+@analysis_bp.route('/multi_summary_page')
+def multi_summary_page():
+    """여러 리스트 요약 페이지를 표시합니다."""
+    file_id = request.args.get('file_id')
+    if not file_id:
+        flash('파일 ID가 제공되지 않았습니다.', 'error')
+        return redirect(url_for('main.index'))
+    
+    return render_template('multi_summary.html', file_id=file_id)
+
 @analysis_bp.route("/get_latest_multi_summary")
 def get_latest_multi_summary():
     """

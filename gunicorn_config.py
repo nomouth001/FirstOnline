@@ -5,7 +5,7 @@ import multiprocessing
 import os
 
 # 바인드 주소
-bind = "0.0.0.0:8000"
+bind = "0.0.0.0:5000"
 
 # 워커 설정 - 원래 권장 설정으로 복원
 workers = multiprocessing.cpu_count() * 2 + 1  # CPU 코어 수 * 2 + 1 (원래 권장 설정)

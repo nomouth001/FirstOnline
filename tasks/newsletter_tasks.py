@@ -437,7 +437,7 @@ def resume_batch_analysis_task(self, batch_id):
             batch_state.status = 'running'
             batch_state.recovery_count += 1
             progress_manager.save_batch_state(batch_state)
-        
+                
         # 남은 종목들 처리
         success, data, status_code, summaries = _process_tickers_batch(
             remaining_tickers, user, batch_id, batch_id, progress_callback=update_task_progress
@@ -463,6 +463,6 @@ def resume_batch_analysis_task(self, batch_id):
                 "data": data
             }
 
-    except Exception as e:
+        except Exception as e:
         logger.exception(f"Error resuming batch analysis task: {batch_id}")
         return {"error": f"Task resume failed: {str(e)}"} 

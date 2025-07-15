@@ -18,10 +18,10 @@ def create_celery_app(flask_app=None):
 
     celery = Celery(
         flask_app.import_name,
-        broker=CELERY_BROKER_URL,
-        backend=CELERY_RESULT_BACKEND,
-        include=['tasks.newsletter_tasks']
-    )
+    broker=CELERY_BROKER_URL,
+    backend=CELERY_RESULT_BACKEND,
+    include=['tasks.newsletter_tasks']
+)
 
     class ContextTask(celery.Task):
         """Make celery tasks work with Flask app context."""
@@ -33,15 +33,15 @@ def create_celery_app(flask_app=None):
     
     # Celery 설정 업데이트
     celery.conf.update(
-        task_serializer='json',
-        accept_content=['json'],
-        result_serializer='json',
-        timezone='Asia/Seoul',
-        enable_utc=True,
-        task_track_started=True,
-        task_time_limit=30 * 60,  # 30분
-        task_soft_time_limit=25 * 60,  # 25분
-        worker_prefetch_multiplier=1,
+    task_serializer='json',
+    accept_content=['json'],
+    result_serializer='json',
+    timezone='Asia/Seoul',
+    enable_utc=True,
+    task_track_started=True,
+    task_time_limit=30 * 60,  # 30분
+    task_soft_time_limit=25 * 60,  # 25분
+    worker_prefetch_multiplier=1,
         task_acks_late=True,
         result_expires=3600,  # 1시간
     )
@@ -49,10 +49,10 @@ def create_celery_app(flask_app=None):
     # 주기적 작업 설정
     celery.conf.beat_schedule = {
         'send-monthly-newsletter': {
-            'task': 'tasks.newsletter_tasks.send_monthly_newsletters',
+        'task': 'tasks.newsletter_tasks.send_monthly_newsletters',
             'schedule': crontab(day_of_month=1, hour=9, minute=0),
-        },
-    }
+    },
+}
     return celery
 
 def create_minimal_flask_app():
@@ -78,4 +78,7 @@ def get_celery_app():
 if os.environ.get('CELERY_WORKER') == '1':
     celery_app = get_celery_app()
 else:
-    celery_app = None 
+    celery_app = None
+
+# systemd 서비스에서 celery_app:celery로 접근할 수 있도록 별칭 생성
+celery = get_celery_app() 

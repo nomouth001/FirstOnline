@@ -57,7 +57,8 @@ pkill -f "celery worker" || echo "실행 중인 Celery 워커가 없습니다."
 sleep 2
 
 # Celery 워커 백그라운드 실행
-nohup celery -A celery_app:get_celery_app worker --concurrency=2 --loglevel=info > celery-worker.log 2>&1 &
+export CELERY_WORKER=1
+nohup celery -A celery_app:celery worker --concurrency=2 --loglevel=info > celery-worker.log 2>&1 &
 echo -e "${GREEN}✅ Celery 워커 시작 완료${NC}"
 
 # systemd 서비스 재시작 시도

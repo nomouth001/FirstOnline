@@ -29,7 +29,7 @@ def download_stock_data_with_retry(ticker, start_date, end_date, max_retries=3, 
             ticker_obj = yf.Ticker(ticker)
             
             try:
-                stock_data = ticker_obj.history(start=start_date, end=end_date, auto_adjust=False)
+            stock_data = ticker_obj.history(start=start_date, end=end_date, auto_adjust=False)
             except Exception as yf_error:
                 # yfinance 내부 오류를 분석하여 HTTP 상태코드 추출
                 error_str = str(yf_error)

@@ -121,7 +121,7 @@ if [ -f "$NGINX_CONFIG_FILE" ]; then
     fi
 else
     echo -e "${YELLOW}⚠️ Nginx 설정 파일을 찾을 수 없어 재시작을 건너뜁니다: $NGINX_CONFIG_FILE${NC}"
-fi
+        fi
 
 echo -e "\n${GREEN}🎉 배포 완료!${NC}"
 echo -e "${YELLOW}📝 사용 가능한 명령어:${NC}"

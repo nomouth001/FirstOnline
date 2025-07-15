@@ -318,110 +318,35 @@ def generate_multiple_lists_analysis_route():
         
         logging.info(f"Selected lists: {list_names}")
         
-        # Celery 워커 상태 확인 후 실행
-        try:
-            # Celery 워커 상태 확인 함수 개선
-            def check_celery_workers():
-                try:
-                    celery = get_celery_instance()
-                    inspect = celery.control.inspect()
-                    
-                    # ping으로 워커 상태 확인 (가장 확실한 방법)
-                    ping_result = inspect.ping()
-                    logging.info(f"Celery worker ping result: {ping_result}")
-                    
-                    # ping 결과가 없거나 비어있으면 워커가 없다고 판단
-                    if not ping_result:
-                        logging.warning("No Celery workers responded to ping")
-                        return False
-                    
-                    # 응답한 워커 수 확인
-                    worker_count = len(ping_result)
-                    logging.info(f"Found {worker_count} active Celery workers")
-                    
-                    # 워커가 있어도 DuplicateNodenameWarning이 있으면 문제가 있을 수 있음
-                    # 단순히 워커 존재 여부만 확인
-                    return worker_count > 0
-                    
-                except Exception as e:
-                    logging.warning(f"Celery 워커 상태 확인 실패: {e}")
-                    return False
-
-            # Celery 워커가 활성화되어 있는지 확인 (타임아웃 2초)
-            import threading
-            import time
-            
-            celery_available = False
-            
-            def check_with_timeout():
-                nonlocal celery_available
-                try:
-                    start_time = time.time()
-                    celery_available = check_celery_workers()
-                    check_time = time.time() - start_time
-                    logging.info(f"Celery worker check completed in {check_time:.2f} seconds")
-                except Exception as e:
-                    logging.warning(f"Celery worker check exception: {e}")
-                    celery_available = False
-            
-            check_thread = threading.Thread(target=check_with_timeout)
-            check_thread.daemon = True
-            check_thread.start()
-            check_thread.join(timeout=2.0)  # 2초 타임아웃
-            
-            if check_thread.is_alive():
-                logging.warning("Celery worker check timed out after 2 seconds - switching to sync mode")
-                celery_available = False
-
-            # Celery 사용 여부 결정
-            if celery_available:
-                logging.info("Starting multiple lists analysis with Celery")
-                try:
-                    task = run_multiple_batch_analysis_task.delay(list_names, current_user.id)
-                    logging.info(f"Multiple batch analysis task started for lists: {list_names}, task_id: {task.id}")
-                    
-                    return jsonify({
-                        "success": True,
-                        "message": f"{len(list_names)}개 리스트의 일괄 분석이 백그라운드에서 시작되었습니다.",
-                        "task_id": task.id,
-                        "list_names": list_names
-                    }), 202  # 202 Accepted - 작업이 수락되었지만 아직 완료되지 않음
-                except Exception as task_error:
-                    logging.error(f"Celery task creation failed: {task_error}")
-                    raise task_error
-            else:
-                logging.warning("Celery 워커가 실행되지 않음, 동기 방식으로 전환")
-                raise Exception("No Celery workers available")
-                
-        except Exception as celery_error:
-            logging.warning(f"Celery 사용 불가, 동기 방식으로 전환: {celery_error}")
-            
-            # Celery 실패 시 동기 방식으로 다중 리스트 분석 실행
-            from services.batch_analysis_service import run_multiple_lists_analysis
-            
-            # 백그라운드 스레드로 실행하여 응답 지연 방지
-            import threading
-            
-            def run_sync_analysis():
-                try:
-                    logging.info(f"Starting synchronous multiple lists analysis for: {list_names}")
-                    result = run_multiple_lists_analysis(list_names, current_user)
-                    if result[0]:  # success
-                        logging.info(f"Synchronous multiple lists analysis completed successfully: {result[1]}")
-                    else:
-                        logging.error(f"Synchronous multiple lists analysis failed: {result[1]}")
-                except Exception as e:
-                    logging.exception(f"Error in synchronous multiple lists analysis: {e}")
-            
-            thread = threading.Thread(target=run_sync_analysis)
-            thread.daemon = True
-            thread.start()
-            
-            return jsonify({
-                "success": True,
-                "message": f"{len(list_names)}개 리스트의 일괄 분석이 시작되었습니다. (동기 방식)",
-                "list_names": list_names
-            }), 202
+        # DuplicateNodenameWarning 문제를 피하기 위해 Celery 사용하지 않고 직접 동기 방식으로 실행
+        logging.info("Starting multiple lists analysis in synchronous mode (avoiding Celery issues)")
+        
+        # 동기 방식으로 다중 리스트 분석 실행
+        from services.batch_analysis_service import run_multiple_lists_analysis
+        
+        # 백그라운드 스레드로 실행하여 응답 지연 방지
+        import threading
+        
+        def run_sync_analysis():
+            try:
+                logging.info(f"Starting synchronous multiple lists analysis for: {list_names}")
+                result = run_multiple_lists_analysis(list_names, current_user)
+                if result[0]:  # success
+                    logging.info(f"Synchronous multiple lists analysis completed successfully: {result[1]}")
+                else:
+                    logging.error(f"Synchronous multiple lists analysis failed: {result[1]}")
+            except Exception as e:
+                logging.exception(f"Error in synchronous multiple lists analysis: {e}")
+        
+        thread = threading.Thread(target=run_sync_analysis)
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({
+            "success": True,
+            "message": f"{len(list_names)}개 리스트의 일괄 분석이 시작되었습니다.",
+            "list_names": list_names
+        }), 202
         
     except json.JSONDecodeError as e:
         logging.exception("JSON decode error in generate_multiple_lists_analysis_route")

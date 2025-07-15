@@ -8,7 +8,6 @@ from flask_login import current_user
 from flask import current_app
 from models import StockList, Stock, get_stock_list_path, get_analysis_summary_path, _extract_summary_from_analysis
 from services.chart_service import generate_chart
-from services.analysis_service import analyze_ticker_internal_logic, is_valid_analysis_file
 from services.progress_service import start_batch_progress, end_batch_progress, update_progress, is_stop_requested
 from utils.file_manager import get_date_folder_path
 from utils.timeout_utils import safe_chart_generation, safe_ai_analysis
@@ -215,7 +214,12 @@ def _process_tickers_batch(tickers_to_process, user, progress_id, summary_filena
                     time.sleep(2)
                     
                     # 2. AI Analysis with timeout
-                    analysis_result = safe_ai_analysis(ticker, AI_ANALYSIS_TIMEOUT)
+                    from services.analysis_service import analyze_ticker_internal_logic
+                    analysis_result = safe_ai_analysis(
+                        analyze_ticker_internal_logic, 
+                        AI_ANALYSIS_TIMEOUT, 
+                        ticker=ticker
+                    )
                     if analysis_result is None:
                         raise TimeoutError("AI analysis timed out")
 

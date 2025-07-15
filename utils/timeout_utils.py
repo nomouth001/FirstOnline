@@ -53,23 +53,35 @@ def safe_chart_generation(ticker, timeout_seconds=60):
     
     return timeout_wrapper(chart_func, timeout_seconds, f"Chart generation for {ticker}")
 
-def safe_ai_analysis(ticker, timeout_seconds=120):
+def safe_ai_analysis(analysis_function, timeout_seconds, **kwargs):
     """
     안전한 AI 분석 함수 (타임아웃 적용)
+    
+    Args:
+        analysis_function: 실행할 분석 함수 (e.g., analyze_ticker_internal_logic)
+        timeout_seconds: 타임아웃 시간 (초)
+        **kwargs: 분석 함수에 전달할 키워드 인수 (e.g., ticker="AAPL")
     """
-    from services.analysis_service import analyze_ticker_internal_logic
     from config import ANALYSIS_DIR
     from utils.file_manager import get_date_folder_path
     from datetime import datetime
     import os
     
-    def analysis_func():
+    def analysis_func_wrapper():
+        ticker = kwargs.get("ticker")
+        if not ticker:
+            raise ValueError("Ticker must be provided in kwargs")
+            
         # 분석 파일 경로 설정
         today_date_str = datetime.today().strftime("%Y%m%d")
         html_file_name = f"{ticker}_{today_date_str}.html"
         analysis_date_folder = get_date_folder_path(ANALYSIS_DIR, today_date_str)
         analysis_html_path = os.path.join(analysis_date_folder, html_file_name)
         
-        return analyze_ticker_internal_logic(ticker, analysis_html_path)
+        # 키워드 인수에 analysis_html_path 추가
+        kwargs['analysis_html_path'] = analysis_html_path
+        
+        return analysis_function(**kwargs)
     
-    return timeout_wrapper(analysis_func, timeout_seconds, f"AI analysis for {ticker}") 
+    ticker_name = kwargs.get('ticker', 'Unknown Ticker')
+    return timeout_wrapper(analysis_func_wrapper, timeout_seconds, f"AI analysis for {ticker_name}") 

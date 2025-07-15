@@ -16,7 +16,6 @@ from models import _extract_summary_from_analysis
 from services.indicator_service import indicator_service
 import json
 import numpy as np
-from tasks.newsletter_tasks import run_bulk_analysis_for_user
 import time
 
 logger = logging.getLogger(__name__)
@@ -948,7 +947,8 @@ def perform_openai_analysis(ticker, common_prompt, daily_b64, weekly_b64, monthl
 
 def analyze_ticker_force_new(ticker):
     """
-    기존 파일을 무시하고 강제로 새로운 분석을 생성합니다.
+    기존 분석 파일을 무시하고 강제로 새로운 분석을 생성합니다.
+    (기존 로직은 동일)
     """
     ticker = ticker.upper()
     
@@ -966,21 +966,3 @@ def analyze_ticker_force_new(ticker):
 
     # 기존 analyze_ticker_internal 함수의 나머지 로직을 그대로 실행
     return analyze_ticker_internal_logic(ticker, analysis_html_path)
-
-def start_bulk_analysis_task(user_id, list_ids):
-    """
-    Celery를 사용하여 특정 사용자의 여러 리스트에 대한 일괄 분석을 시작합니다.
-    
-    :param user_id: 대상 사용자의 ID
-    :param list_ids: 분석할 종목 리스트 ID의 리스트
-    :return: Celery 태스크 객체
-    """
-    try:
-        logger.info(f"사용자 ID {user_id}의 리스트 {list_ids}에 대한 일괄 분석 작업을 요청합니다.")
-        # Celery 태스크를 비동기적으로 호출
-        task = run_bulk_analysis_for_user.delay(user_id, list_ids)
-        return task
-    except Exception as e:
-        logger.error(f"일괄 분석 태스크 시작 중 예외 발생: {e}", exc_info=True)
-        # 예외를 다시 발생시켜 호출한 쪽에서 처리하도록 함
-        raise

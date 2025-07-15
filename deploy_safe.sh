@@ -48,6 +48,13 @@ echo -e "${GREEN}✅ 정적 파일 폴더 확인 완료${NC}"
 
 # 6. 서비스 재시작 (Gunicorn, Celery)
 echo -e "${BLUE}▶️ 6. 핵심 서비스 재시작 중...${NC}"
+
+# Redis 서비스 확인 및 시작
+if ! systemctl is-active --quiet redis; then
+    echo -e "${YELLOW}🔧 Redis 서비스 시작 중...${NC}"
+    sudo systemctl start redis
+fi
+
 sudo systemctl restart newsletter
 sudo systemctl restart celery-worker
 sudo systemctl restart celery-beat

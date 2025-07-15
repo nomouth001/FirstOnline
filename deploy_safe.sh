@@ -46,8 +46,16 @@ echo -e "${BLUE}▶️ 5. 정적 파일 폴더 확인 중...${NC}"
 mkdir -p static/charts static/analysis static/summaries static/debug static/memos static/multi_summaries
 echo -e "${GREEN}✅ 정적 파일 폴더 확인 완료${NC}"
 
-# 6. 서비스 재시작 (Gunicorn, Celery)
-echo -e "${BLUE}▶️ 6. 핵심 서비스 재시작 중...${NC}"
+# 6. 좀비 프로세스 정리 및 서비스 재시작
+echo -e "${BLUE}▶️ 6. 좀비 프로세스 정리 및 핵심 서비스 재시작 중...${NC}"
+
+# 좀비 프로세스 강제 정리
+echo -e "${YELLOW}🧹 좀비 프로세스 정리 중...${NC}"
+sudo pkill -f "gunicorn.*newsletter" || echo "실행 중인 gunicorn 프로세스가 없습니다."
+sudo pkill -f "celery worker" || echo "실행 중인 celery worker가 없습니다."
+sudo pkill -f "celery beat" || echo "실행 중인 celery beat가 없습니다."
+sleep 3
+echo -e "${GREEN}✅ 좀비 프로세스 정리 완료${NC}"
 
 # Redis 서비스 확인 및 시작
 if ! systemctl is-active --quiet redis; then
@@ -55,6 +63,8 @@ if ! systemctl is-active --quiet redis; then
     sudo systemctl start redis
 fi
 
+# systemd 서비스 재시작
+echo -e "${YELLOW}🔄 systemd 서비스 재시작 중...${NC}"
 sudo systemctl restart newsletter
 sudo systemctl restart celery-worker
 sudo systemctl restart celery-beat

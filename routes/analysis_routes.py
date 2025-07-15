@@ -320,22 +320,37 @@ def generate_multiple_lists_analysis_route():
         
         logging.info(f"Selected lists: {list_names}")
         
-        # Celery 작업으로 실행 (DuplicateNodenameWarning은 무시)
-        logging.info("Starting multiple lists analysis with Celery")
+        # Celery 대신 백그라운드 스레드로 실행 (리눅스 환경 이슈 우회)
+        logging.info("Starting multiple lists analysis with background thread (Celery bypass)")
         
         try:
-            task = run_multiple_batch_analysis_task.delay(list_names, current_user.id)
-            logging.info(f"Multiple batch analysis task started for lists: {list_names}, task_id: {task.id}")
+            from services.batch_analysis_service import run_multiple_lists_analysis_with_user_id
+            import threading
+            import uuid
+            
+            # 가상 task_id 생성
+            task_id = str(uuid.uuid4())
+            
+            # 백그라운드 스레드로 실행
+            thread = threading.Thread(
+                target=run_multiple_lists_analysis_with_user_id,
+                args=(list_names, current_user.id, current_user.is_admin),
+                name=f"MultiAnalysis-{task_id[:8]}"
+            )
+            thread.daemon = True
+            thread.start()
+            
+            logging.info(f"Multiple batch analysis thread started for lists: {list_names}, thread_id: {task_id}")
             
             return jsonify({
                 "success": True,
-                "message": f"{len(list_names)}개 리스트의 일괄 분석이 백그라운드에서 시작되었습니다.",
-                "task_id": task.id,
+                "message": f"{len(list_names)}개 리스트의 일괄 분석이 백그라운드에서 시작되었습니다. (동기 우회 모드)",
+                "task_id": task_id,
                 "list_names": list_names
             }), 202  # 202 Accepted - 작업이 수락되었지만 아직 완료되지 않음
             
         except Exception as e:
-            logging.error(f"Celery task creation failed: {e}")
+            logging.error(f"Background thread creation failed: {e}")
             return jsonify({"error": f"Failed to start analysis: {str(e)}"}), 500
         
     except json.JSONDecodeError as e:

@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# Celery 워커 시작 스크립트 (원래 권장 설정)
+# Celery 워커 시작 스크립트 (개선된 구조)
 # 사용법: ./celery_start.sh
 
-echo "🚀 Celery 워커 시작 (원래 권장 설정)..."
+echo "🚀 Celery 워커 시작 (개선된 구조)..."
 
 # 가상환경 활성화 (있는 경우)
 if [ -d "venv" ]; then
@@ -20,8 +20,9 @@ sleep 2
 CPU_CORES=$(nproc)
 echo "🔍 CPU 코어 수: $CPU_CORES"
 
-# Celery 워커 시작 (CPU 코어 수만큼 동시성 설정)
+# Celery 워커 환경변수 설정 및 시작
 echo "✨ Celery 워커 시작 (동시성: $CPU_CORES)..."
-celery -A celery_app worker --concurrency=$CPU_CORES --loglevel=info &
+export CELERY_WORKER=1
+celery -A celery_app:get_celery_app worker --concurrency=$CPU_CORES --loglevel=info &
 
 echo "✅ Celery 워커 시작 완료!" 

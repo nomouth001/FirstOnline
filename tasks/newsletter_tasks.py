@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime, time
 from celery import current_task
-from celery_app import celery_app
+from celery_app import get_celery_app
 from models import db, User, NewsletterSubscription, Stock, StockList, EmailLog
 from services.newsletter_service import newsletter_service
 from services.email_service import email_service
@@ -11,6 +11,9 @@ from services.batch_analysis_service import _process_tickers_batch
 from flask import current_app # 원래대로 current_app을 사용합니다.
 
 logger = logging.getLogger(__name__)
+
+# Celery 앱 인스턴스 가져오기
+celery_app = get_celery_app()
 
 @celery_app.task(bind=True)
 def send_daily_newsletters(self):

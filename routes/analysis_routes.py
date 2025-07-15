@@ -16,14 +16,13 @@ import glob
 from utils.file_manager import get_date_folder_path, find_latest_analysis_file, get_all_analysis_dates, find_analysis_file_by_date
 from services.batch_analysis_service import run_single_list_analysis, run_multiple_lists_analysis
 from tasks.newsletter_tasks import run_batch_analysis_task, run_multiple_batch_analysis_task, resume_batch_analysis_task
-from celery_app import celery_app
+from celery_app import get_celery_app
 from flask_login import login_required, current_user
 from models import db, Stock, StockList, AnalysisHistory, User
 from services.analysis_service import analyze_ticker_internal, get_analysis_summary, is_valid_analysis_file
 from services.chart_service import generate_chart_for_ticker
 from services.data_processing_service import download_from_yahoo_finance
 from services.batch_analysis_service import start_batch_analysis
-from services.progress_service import get_progress, stop_batch
 from celery.result import AsyncResult
 
 # Blueprint 생성
@@ -776,7 +775,7 @@ def get_task_status(task_id):
         return jsonify({"error": "Authentication required"}), 401
     
     try:
-        task = celery_app.AsyncResult(task_id)
+        task = get_celery_instance().AsyncResult(task_id)
         
         if task.state == 'PENDING':
             response = {
@@ -815,7 +814,7 @@ def cancel_task(task_id):
         return jsonify({"error": "Authentication required"}), 401
     
     try:
-        celery_app.control.revoke(task_id, terminate=True)
+        get_celery_instance().control.revoke(task_id, terminate=True)
         logging.info(f"Task cancelled: {task_id}")
         return jsonify({"message": "작업이 취소되었습니다."}), 200
         

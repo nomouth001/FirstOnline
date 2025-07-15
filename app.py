@@ -93,7 +93,13 @@ def create_app():
     @app.route('/')
     def index():
         if current_user.is_authenticated:
-            return redirect(url_for('user_home'))
+            if current_user.is_administrator():
+                # 관리자는 관리자용 인덱스 페이지로
+                return render_template('index.html')
+            else:
+                # 일반 사용자는 사용자 홈으로 리디렉션
+                return redirect(url_for('user_home'))
+        # 로그인하지 않은 사용자는 메인 인덱스 페이지로
         return render_template('index.html')
     
     # 사용자 홈 페이지

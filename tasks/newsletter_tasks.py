@@ -271,13 +271,12 @@ def run_batch_analysis_task(self, list_name, user_id):
         if not tickers:
             return {'status': 'Completed', 'message': 'No tickers in the list.'}
 
-        batch_id = start_batch_progress(
-            user_id=user_id,
-            list_name=list_name,
+        start_batch_progress(
+            type_name='single_list',
             total_tickers=len(tickers),
-            task_id=self.request.id,
-            batch_type='single_list'
+            list_name=list_name
         )
+        batch_id = list_name
         
         # 진행 상황 업데이트 함수 정의
         def update_task_progress(current, total, status_message):

@@ -1,0 +1,17 @@
+{
+  "batch_id": "00 Holdings",
+  "batch_type": "single",
+  "user_id": 1,
+  "list_names": [
+    "00 Holdings"
+  ],
+  "total_tickers": 24,
+  "processed_tickers": 0,
+  "current_ticker": null,
+  "failed_tickers": [],
+  "start_time": "2025-07-14T22:31:55.273659",
+  "last_update_time": "2025-07-14T22:31:55.274273",
+  "status": "running",
+  "error_message": null,
+  "recovery_count": 0
+}

@@ -235,7 +235,8 @@ def bulk_generate(list_id):
                 html_file_name = f"{ticker}_{today_date_str}.html"
                 
                 # 분석 파일 경로 설정
-                from routes.analysis_routes import get_date_folder_path, ANALYSIS_DIR
+                from utils.file_manager import get_date_folder_path
+                from config import ANALYSIS_DIR
                 analysis_date_folder = get_date_folder_path(ANALYSIS_DIR, today_date_str)
                 analysis_html_path = os.path.join(analysis_date_folder, html_file_name)
                 

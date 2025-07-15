@@ -64,8 +64,7 @@ def create_app():
     @app.context_processor
     def inject_global_vars():
         return {
-            'current_user': current_user,
-            'stock_file_status': get_stock_file_status()
+            'current_user': current_user
         }
     
     # 요청 전 처리

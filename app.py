@@ -2,12 +2,14 @@
 
 import logging
 import os
-from flask import Flask, render_template, session, flash, redirect, url_for
+from flask import Flask, render_template, session, flash, redirect, url_for, request, g, jsonify
 from flask_login import LoginManager, current_user, login_required
-from config import SECRET_KEY, SESSION_TYPE, PERMANENT_SESSION_LIFETIME, LOGGING_ENABLED, SQLALCHEMY_DATABASE_URI, SQLALCHEMY_TRACK_MODIFICATIONS
+from flask_migrate import Migrate
+from config import SECRET_KEY, SESSION_TYPE, PERMANENT_SESSION_LIFETIME, LOGGING_ENABLED, SQLALCHEMY_DATABASE_URI, SQLALCHEMY_TRACK_MODIFICATIONS, Config, DevelopmentConfig, ProductionConfig
 from models import db, User, StockList, Stock
 from utils.file_manager import get_stock_file_status
 from utils.memory_monitor import initialize_memory_monitoring
+from celery_app import create_celery_app # 수정된 팩토리 함수 임포트
 
 # 로깅 설정을 가장 먼저 적용
 try:
@@ -41,104 +43,105 @@ logger.addHandler(file_handler)
 
 logger.info("애플리케이션 시작 - 로깅 설정 완료")
 
-# Flask 애플리케이션 생성
-app = Flask(__name__)
+def create_app(config_class=None):
+    app = Flask(__name__, instance_relative_config=True)
 
-# 설정 적용
-app.secret_key = SECRET_KEY
-app.config['SESSION_TYPE'] = SESSION_TYPE
-app.config['PERMANENT_SESSION_LIFETIME'] = PERMANENT_SESSION_LIFETIME
-app.config['SQLALCHEMY_DATABASE_URI'] = SQLALCHEMY_DATABASE_URI
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = SQLALCHEMY_TRACK_MODIFICATIONS
+    # 설정 적용
+    app.secret_key = SECRET_KEY
+    app.config['SESSION_TYPE'] = SESSION_TYPE
+    app.config['PERMANENT_SESSION_LIFETIME'] = PERMANENT_SESSION_LIFETIME
+    app.config['SQLALCHEMY_DATABASE_URI'] = SQLALCHEMY_DATABASE_URI
+    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = SQLALCHEMY_TRACK_MODIFICATIONS
 
-# 데이터베이스 초기화
-db.init_app(app)
+    # 데이터베이스 초기화
+    db.init_app(app)
+    Migrate(app, db)
 
-# Flask-Login 초기화
-login_manager = LoginManager()
-login_manager.init_app(app)
-login_manager.login_view = 'auth.login'
-login_manager.login_message = '이 페이지에 접근하려면 로그인이 필요합니다.'
-login_manager.login_message_category = 'info'
+    # Flask-Login 초기화
+    login_manager = LoginManager()
+    login_manager.init_app(app)
+    login_manager.login_view = 'auth.login'
+    login_manager.login_message = '이 페이지에 접근하려면 로그인이 필요합니다.'
+    login_manager.login_message_category = 'info'
 
-@login_manager.user_loader
-def load_user(user_id):
-    """사용자 로더"""
-    return User.query.get(int(user_id))
+    @login_manager.user_loader
+    def load_user(user_id):
+        """사용자 로더"""
+        return User.query.get(int(user_id))
 
-logger.info("Flask 앱 설정 완료")
+    logger.info("Flask 앱 설정 완료")
 
-# Blueprint 임포트
-from routes.stock_routes import stock_bp
-from routes.analysis_routes import analysis_bp
-from routes.file_management_routes import file_management_bp
-# from routes.prompt_test_routes import prompt_test_bp  # 임시 폴더로 이동됨
-from routes.auth_routes import auth_bp
-from routes.user_stock_routes import user_stock_bp
-from routes.admin_routes import admin_bp
-from routes.newsletter_routes import newsletter_bp
+    # Blueprint 임포트
+    from routes.stock_routes import stock_bp
+    from routes.analysis_routes import analysis_bp
+    from routes.file_management_routes import file_management_bp
+    # from routes.prompt_test_routes import prompt_test_bp  # 임시 폴더로 이동됨
+    from routes.auth_routes import auth_bp
+    from routes.user_stock_routes import user_stock_bp
+    from routes.admin_routes import admin_bp
+    from routes.newsletter_routes import newsletter_bp
 
-# Blueprint 등록
-app.register_blueprint(stock_bp)
-app.register_blueprint(analysis_bp)
-app.register_blueprint(file_management_bp)
-# app.register_blueprint(prompt_test_bp)  # 임시 폴더로 이동됨
-app.register_blueprint(auth_bp, url_prefix='/auth')
-app.register_blueprint(user_stock_bp, url_prefix='/user')
-app.register_blueprint(admin_bp, url_prefix='/admin')
-app.register_blueprint(newsletter_bp, url_prefix='/newsletter')
+    # Blueprint 등록
+    app.register_blueprint(stock_bp)
+    app.register_blueprint(analysis_bp)
+    app.register_blueprint(file_management_bp)
+    # app.register_blueprint(prompt_test_bp)  # 임시 폴더로 이동됨
+    app.register_blueprint(auth_bp, url_prefix='/auth')
+    app.register_blueprint(user_stock_bp, url_prefix='/user')
+    app.register_blueprint(admin_bp, url_prefix='/admin')
+    app.register_blueprint(newsletter_bp, url_prefix='/newsletter')
 
-logger.info("Blueprint 등록 완료")
+    logger.info("Blueprint 등록 완료")
 
-# 애플리케이션 컨텍스트에서 데이터베이스 테이블 생성 (Blueprint 등록 후)
-with app.app_context():
-    try:
-        db.create_all()
-        logger.info("데이터베이스 테이블 생성 완료")
-        
-        # 기본 관리자 계정 생성 (존재하지 않는 경우)
-        from werkzeug.security import generate_password_hash
-        admin_user = User.query.filter_by(username='admin').first()
-        if not admin_user:
-            # 환경변수에서 관리자 비밀번호 가져오기
-            admin_password = os.getenv('ADMIN_PASSWORD')
-            if not admin_password:
-                logger.warning("ADMIN_PASSWORD 환경변수가 설정되지 않았습니다! 기본 임시 비밀번호를 사용합니다.")
-                admin_password = 'CHANGE_ME_IMMEDIATELY_123!'
-            
-            admin_user = User(
-                username='admin',
-                email='admin@example.com',
-                first_name='Admin',
-                last_name='User',
-                is_verified=True,
-                is_admin=True,
-                password_hash=generate_password_hash(admin_password)
-            )
-            db.session.add(admin_user)
-            db.session.commit()
-            logger.info(f"기본 관리자 계정 생성 완료 (비밀번호: {'환경변수에서 설정' if os.getenv('ADMIN_PASSWORD') else '임시 비밀번호'})")
-        else:
-            logger.info("기본 관리자 계정이 이미 존재합니다")
-        
-        # 메모리 모니터링 초기화
+    # 애플리케이션 컨텍스트에서 데이터베이스 테이블 생성 (Blueprint 등록 후)
+    with app.app_context():
         try:
-            initialize_memory_monitoring()
-            logger.info("메모리 모니터링 초기화 완료")
+            db.create_all()
+            logger.info("데이터베이스 테이블 생성 완료")
+            
+            # 기본 관리자 계정 생성 (존재하지 않는 경우)
+            from werkzeug.security import generate_password_hash
+            admin_user = User.query.filter_by(username='admin').first()
+            if not admin_user:
+                # 환경변수에서 관리자 비밀번호 가져오기
+                admin_password = os.getenv('ADMIN_PASSWORD')
+                if not admin_password:
+                    logger.warning("ADMIN_PASSWORD 환경변수가 설정되지 않았습니다! 기본 임시 비밀번호를 사용합니다.")
+                    admin_password = 'CHANGE_ME_IMMEDIATELY_123!'
+                
+                admin_user = User(
+                    username='admin',
+                    email='admin@example.com',
+                    first_name='Admin',
+                    last_name='User',
+                    is_verified=True,
+                    is_admin=True,
+                    password_hash=generate_password_hash(admin_password)
+                )
+                db.session.add(admin_user)
+                db.session.commit()
+                logger.info(f"기본 관리자 계정 생성 완료 (비밀번호: {'환경변수에서 설정' if os.getenv('ADMIN_PASSWORD') else '임시 비밀번호'})")
+            else:
+                logger.info("기본 관리자 계정이 이미 존재합니다")
+            
+            # 메모리 모니터링 초기화
+            try:
+                initialize_memory_monitoring()
+                logger.info("메모리 모니터링 초기화 완료")
+            except Exception as e:
+                logger.error(f"메모리 모니터링 초기화 오류: {e}")
+                
+            # 프로세스 모니터링 초기화 - systemd로 분리하여 더 이상 사용하지 않음
+            # try:
+            #     from utils.process_monitor import initialize_process_monitoring
+            #     initialize_process_monitoring()
+            #     logger.info("프로세스 모니터링 초기화 완료")
+            # except Exception as e:
+            #     logger.error(f"프로세스 모니터링 초기화 오류: {e}")
+                
         except Exception as e:
-            logger.error(f"메모리 모니터링 초기화 오류: {e}")
-            
-        # 프로세스 모니터링 초기화 - systemd로 분리하여 더 이상 사용하지 않음
-        # try:
-        #     from utils.process_monitor import initialize_process_monitoring
-        #     initialize_process_monitoring()
-        #     logger.info("프로세스 모니터링 초기화 완료")
-        # except Exception as e:
-        #     logger.error(f"프로세스 모니터링 초기화 오류: {e}")
-            
-    except Exception as e:
-        logger.error(f"데이터베이스 초기화 오류: {e}")
-        # 에러가 발생해도 앱은 계속 실행
+            logger.error(f"데이터베이스 초기화 오류: {e}")
+            # 에러가 발생해도 앱은 계속 실행
 
 @app.before_request
 def set_current_stock_list():
@@ -253,6 +256,10 @@ def create_admin():
     db.session.commit()
     
     logger.info(f"관리자 계정이 생성되었습니다: {username}")
+
+# Flask 앱과 Celery 앱 생성 및 연결
+app = create_app()
+celery = create_celery_app(app)
 
 if __name__ == "__main__":
     logger.info("Flask 서버 시작")

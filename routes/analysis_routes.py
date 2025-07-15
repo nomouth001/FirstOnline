@@ -3,7 +3,7 @@ import csv
 import json
 import logging
 from datetime import datetime
-from flask import Blueprint, request, jsonify, session, render_template, send_from_directory
+from flask import Blueprint, request, jsonify, session, render_template, send_from_directory, flash, redirect, url_for, current_app
 from models import get_stock_list_path, get_analysis_summary_path, _extract_summary_from_analysis
 from services.chart_service import generate_chart
 from services.analysis_service import analyze_ticker_internal, analyze_ticker_internal_logic, is_valid_analysis_file, analyze_ticker_force_new
@@ -17,6 +17,14 @@ from utils.file_manager import get_date_folder_path, find_latest_analysis_file, 
 from services.batch_analysis_service import run_single_list_analysis, run_multiple_lists_analysis
 from tasks.newsletter_tasks import run_batch_analysis_task, run_multiple_batch_analysis_task, resume_batch_analysis_task
 from celery_app import celery_app
+from flask_login import login_required, current_user
+from models import db, Stock, StockList, AnalysisHistory, User
+from services.analysis_service import analyze_ticker_internal, get_analysis_summary, is_valid_analysis_file
+from services.chart_service import generate_chart_for_ticker
+from services.data_processing_service import download_from_yahoo_finance
+from services.batch_analysis_service import start_batch_analysis
+from services.progress_service import get_progress, stop_batch
+from celery.result import AsyncResult
 
 # Blueprint 생성
 analysis_bp = Blueprint('analysis', __name__)
@@ -978,462 +986,27 @@ def view_existing_chart(ticker):
         return f"Error: Failed to view existing chart for {ticker}: {str(e)}", 500 
     
 
-# ==================== 파일분할 리팩토링 (롤백을 위해 주석 처리) ====================
-# @analysis_bp.route("/generate_all_charts_and_analysis/<list_name>", methods=['GET', 'POST'])
-# def generate_all_charts_and_analysis(list_name):
-#     from flask_login import current_user
-#     from models import StockList, Stock
-    
-#     if not current_user.is_authenticated:
-#         return jsonify({"error": "Authentication required"}), 401
-    
-#     # 데이터베이스에서 종목 리스트 찾기
-#     if current_user.is_administrator():
-#         # 어드민은 모든 리스트에 접근 가능
-#         stock_list = StockList.query.filter_by(name=list_name).first()
-#     else:
-#         # 일반 사용자는 자신의 리스트만 접근
-#         stock_list = StockList.query.filter_by(name=list_name, user_id=current_user.id).first()
-    
-#     if not stock_list and list_name == 'default':
-#         # default 리스트가 없으면 CSV 파일에서 읽기 (호환성을 위해)
-#         csv_file_path = get_stock_list_path(list_name)
-#         if os.path.exists(csv_file_path):
-#             tickers_to_process = []
-#             try:
-#                 with open(csv_file_path, newline="", encoding='utf-8') as f:
-#                     reader = csv.DictReader(f)
-#                     for row in reader:
-#                         tickers_to_process.append(row["ticker"])
-#             except Exception as e:
-#                 logging.exception(f"Failed to read tickers from {list_name}.csv")
-#                 return jsonify({"error": f"Failed to read tickers from {list_name}.csv: {e}"}), 500
-#         else:
-#             return jsonify({"error": f"Stock list '{list_name}' not found."}), 404
-#     elif not stock_list:
-#         return jsonify({"error": f"Stock list '{list_name}' not found."}), 404
-#     else:
-#         # 데이터베이스에서 종목들 가져오기
-#         stocks = Stock.query.filter_by(stock_list_id=stock_list.id).all()
-#         tickers_to_process = [stock.ticker for stock in stocks]
+@analysis_bp.route('/start_batch/<list_name>', methods=['POST'])
+@login_required
+def start_batch_analysis_route(list_name):
+    from tasks.newsletter_tasks import run_batch_analysis_task # 함수 내에서 임포트
+    task = run_batch_analysis_task.delay(list_name, current_user.id)
+    return jsonify({"task_id": task.id})
 
-#     if not tickers_to_process:
-#         return jsonify({"error": f"No tickers found in list '{list_name}'."}), 400
+@analysis_bp.route('/generate_multiple_lists_analysis', methods=['POST'])
+@login_required
+def generate_multiple_lists_analysis_route():
+    from tasks.newsletter_tasks import run_multiple_batch_analysis_task # 함수 내에서 임포트
+    # ... (기존 로직 동일)
+    task = run_multiple_batch_analysis_task.delay(list_names, current_user.id)
+    # ... (기존 로직 동일)
 
-#     results = []
-#     all_summaries = {}
-    
-#     summary_file_path = get_analysis_summary_path(list_name)
-#     total_tickers = len(tickers_to_process)
-    
-#     # 일괄 처리 시작 기록
-#     start_batch_progress("single", total_tickers, list_name)
-    
-#     logging.info(f"Starting batch processing for {total_tickers} tickers in list '{list_name}'")
-
-#     try:
-#         for i, ticker in enumerate(tickers_to_process, 1):
-#             # 중단 요청 확인
-#             if is_stop_requested():
-#                 logging.info(f"Stop requested during processing. Stopping at ticker {i-1}/{total_tickers}")
-#                 return jsonify({
-#                     "message": f"일괄 처리가 중단되었습니다. {i-1}개 종목이 처리되었습니다.",
-#                     "individual_results": results,
-#                     "summary": {
-#                         "total_tickers": total_tickers,
-#                         "processed": i-1,
-#                         "stopped": True
-#                     }
-#                 }), 200
-            
-#             ticker_start_time = datetime.now()
-#             logging.info(f"Processing ticker {i}/{total_tickers}: {ticker} from list: {list_name}")
-            
-#             # 진행상황 업데이트
-#             update_progress(ticker=ticker, processed=i-1, total=total_tickers, list_name=list_name)
-            
-#             chart_generation_status = None
-#             analysis_status = None
-            
-#             try:
-#                 # 1. 차트 생성
-#                 chart_start_time = datetime.now()
-#                 chart_result = generate_chart(ticker)
-#                 chart_duration = (datetime.now() - chart_start_time).total_seconds()
-#                 chart_generation_status = "Chart generation succeeded."
-
-#                 # 2. AI 분석 (기존 파일 유효성 확인 후 분석)
-#                 analysis_start_time = datetime.now()
-                
-#                 # 기존 분석 파일 확인 및 유효성 검사
-#                 today_date_str = datetime.today().strftime("%Y%m%d")
-#                 html_file_name = f"{ticker}_{today_date_str}.html"
-                
-#                 # 날짜별 폴더 구조 사용
-#                 analysis_date_folder = get_date_folder_path(ANALYSIS_DIR, today_date_str)
-#                 analysis_html_path = os.path.join(analysis_date_folder, html_file_name)
-                
-#                 # 기존 파일이 있지만 유효하지 않으면 삭제
-#                 if os.path.exists(analysis_html_path):
-#                     if not is_valid_analysis_file(analysis_html_path):
-#                         logging.info(f"[{ticker}] Existing analysis file is invalid, will create new one")
-#                         try:
-#                             os.remove(analysis_html_path)
-#                             logging.info(f"[{ticker}] Removed invalid analysis file: {analysis_html_path}")
-#                         except Exception as e:
-#                             logging.warning(f"[{ticker}] Failed to remove invalid analysis file: {e}")
-                
-#                 analysis_data, analysis_status_code = analyze_ticker_internal_logic(ticker, analysis_html_path)
-#                 analysis_duration = (datetime.now() - analysis_start_time).total_seconds()
-                
-#                 if analysis_status_code == 200 and analysis_data.get("success"):
-#                     analysis_status = "AI analysis succeeded."
-#                     all_summaries[ticker] = {
-#                         "gemini_summary": analysis_data.get("summary_gemini", "요약 없음."),
-#                         "openai_summary": "OpenAI 분석 비활성화됨",
-#                         "last_analyzed_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-#                     }
-#                     total_duration = (datetime.now() - ticker_start_time).total_seconds()
-#                     logging.info(f"Successfully processed {ticker} ({i}/{total_tickers}) in {total_duration:.2f} seconds")
-#                 else:
-#                     analysis_status = f"AI analysis failed: {analysis_data.get('analysis_gemini', 'Unknown error')}"
-#                     logging.error(f"AI analysis failed for {ticker}: {analysis_status}")
-#                     all_summaries[ticker] = {
-#                         "gemini_summary": analysis_data.get("summary_gemini", "분석 실패."),
-#                         "openai_summary": "OpenAI 분석 비활성화됨",
-#                         "last_analyzed_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-#                     }
-                
-#                 results.append({
-#                     "ticker": ticker,
-#                     "chart_status": chart_generation_status,
-#                     "analysis_status": analysis_status
-#                 })
-                
-#             except Exception as e:
-#                 error_msg = f"Unexpected error processing {ticker}: {str(e)}"
-#                 logging.exception(error_msg)
-#                 results.append({
-#                     "ticker": ticker,
-#                     "chart_status": "Error",
-#                     "analysis_status": error_msg
-#                 })
-#                 all_summaries[ticker] = {
-#                     "gemini_summary": f"처리 중 오류 발생: {str(e)}",
-#                     "openai_summary": "OpenAI 분석 비활성화됨",
-#                     "last_analyzed_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-#                 }
-
-#         # 모든 종목 처리 후 요약 정보를 JSON 파일로 저장
-#         try:
-#             with open(summary_file_path, 'w', encoding='utf-8') as f:
-#                 json.dump(all_summaries, f, ensure_ascii=False, indent=4)
-#             logging.info(f"All summaries for list '{list_name}' saved to {summary_file_path}")
-#         except Exception as e:
-#             logging.exception(f"Failed to save summaries for list '{list_name}'")
-#             return jsonify({"error": f"Failed to save summaries: {e}", "individual_results": results}), 500
-
-#         # 성공/실패 통계 계산
-#         success_count = sum(1 for r in results if r.get("chart_status") == "Chart generation succeeded." and r.get("analysis_status") == "AI analysis succeeded.")
-#         failed_count = len(results) - success_count
-        
-#         logging.info(f"Batch processing completed for list '{list_name}': {success_count} successful, {failed_count} failed out of {total_tickers} total")
-
-#         return jsonify({
-#             "message": f"Successfully processed all tickers in list '{list_name}'.",
-#             "individual_results": results,
-#             "summary": {
-#                 "total_tickers": total_tickers,
-#                 "successful": success_count,
-#                 "failed": failed_count,
-#                 "success_rate": f"{(success_count/total_tickers)*100:.1f}%" if total_tickers > 0 else "0%"
-#             }
-#         }), 200
-        
-#     finally:
-#         # 일괄 처리 종료 기록
-#         end_batch_progress()
-# ==============================================================================
-
-
-
-# ==================== 파일분할 리팩토링 (롤백을 위해 주석 처리) ====================
-# @analysis_bp.route("/generate_multiple_lists_analysis", methods=["POST"])
-# def generate_multiple_lists_analysis():
-#     from flask_login import current_user
-#     from models import StockList, Stock
-    
-#     if not current_user.is_authenticated:
-#         return jsonify({"error": "Authentication required"}), 401
-    
-#     try:
-#     data = request.get_json()
-#         selected_lists = data.get("selected_lists", [])
-        
-#         if not selected_lists:
-#             return jsonify({"error": "No lists selected"}), 400
-        
-#         all_results = {}
-#         all_summaries = {}
-#         total_tickers = 0
-        
-#         # 전체 종목 수 계산 (데이터베이스 우선)
-#         for list_name in selected_lists:
-#             # 데이터베이스에서 먼저 찾기
-#             if current_user.is_administrator():
-#                 stock_list = StockList.query.filter_by(name=list_name).first()
-#             else:
-#                 stock_list = StockList.query.filter_by(name=list_name, user_id=current_user.id).first()
-            
-#             if stock_list:
-#                 stocks = Stock.query.filter_by(stock_list_id=stock_list.id).all()
-#                 total_tickers += len(stocks)
-#             else:
-#                 # CSV 파일에서 백업으로 찾기
-#                 csv_file_path = get_stock_list_path(list_name)
-#                 if os.path.exists(csv_file_path):
-#                     try:
-#                         with open(csv_file_path, newline="", encoding='utf-8') as f:
-#                             reader = csv.DictReader(f)
-#                             tickers = [row["ticker"] for row in reader]
-#                             total_tickers += len(tickers)
-#                     except Exception as e:
-#                         logging.error(f"Failed to count tickers in {list_name}: {e}")
-        
-#         # 일괄 처리 시작 기록
-#         start_batch_progress("multiple", total_tickers, f"{len(selected_lists)}개 리스트")
-        
-#         processed_count = 0
-        
-#         try:
-#             for list_name in selected_lists:
-#                 # 데이터베이스에서 먼저 찾기
-#                 if current_user.is_administrator():
-#                     stock_list = StockList.query.filter_by(name=list_name).first()
-#                 else:
-#                     stock_list = StockList.query.filter_by(name=list_name, user_id=current_user.id).first()
-                
-#                 tickers_to_process = []
-                
-#                 if stock_list:
-#                     # 데이터베이스에서 종목들 가져오기
-#                     stocks = Stock.query.filter_by(stock_list_id=stock_list.id).all()
-#                     tickers_to_process = [stock.ticker for stock in stocks]
-#                 else:
-#                     # CSV 파일에서 백업으로 찾기
-#                     csv_file_path = get_stock_list_path(list_name)
-#                     if os.path.exists(csv_file_path):
-#                         try:
-#                             with open(csv_file_path, newline="", encoding='utf-8') as f:
-#                                 reader = csv.DictReader(f)
-#                                 for row in reader:
-#                                     tickers_to_process.append(row["ticker"])
-#                         except Exception as e:
-#                             all_results[list_name] = {"error": f"Failed to read tickers from {list_name}.csv: {e}"}
-#                             continue
-#                     else:
-#                         all_results[list_name] = {"error": f"Stock list '{list_name}' not found."}
-#                         continue
-                
-#                 if not tickers_to_process:
-#                     all_results[list_name] = {"error": f"No tickers found in list '{list_name}'."}
-#                     continue
-                
-#                 list_results = []
-#                 list_summaries = {}
-                
-#                 for i, ticker in enumerate(tickers_to_process, 1):
-#                     # 중단 요청 확인
-#                     if is_stop_requested():
-#                         logging.info(f"Stop requested during multiple lists processing. Stopping at ticker {processed_count-1}/{total_tickers}")
-#                         return jsonify({
-#                             "message": f"여러 리스트 일괄 처리가 중단되었습니다. {processed_count-1}개 종목이 처리되었습니다.",
-#                             "results": all_results,
-#                             "summary": {
-#                                 "total_lists": len(selected_lists),
-#                                 "total_tickers": total_tickers,
-#                                 "processed": processed_count-1,
-#                                 "stopped": True
-#                             }
-#                         }), 200
-                    
-#                     ticker_start_time = datetime.now()
-#                     logging.info(f"=== START Processing ticker {i}/{len(tickers_to_process)}: {ticker} from list: {list_name} ===")
-                    
-#                     # 진행상황 업데이트
-#                     processed_count += 1
-#                     update_progress(ticker=ticker, processed=processed_count-1, total=total_tickers, list_name=f"{list_name} ({processed_count}/{total_tickers})")
-                    
-#                     chart_generation_status = None
-#                     analysis_status = None
-                    
-#                     # 타임아웃과 재시도 로직 추가
-#                     max_retries = 3
-#                     retry_count = 0
-#                     success = False
-                    
-#                     while retry_count < max_retries and not success:
-#                         try:
-#                             logging.info(f"[{ticker}] Attempt {retry_count + 1}/{max_retries}")
-                            
-#                             # 1. 차트 생성 (타임아웃 적용)
-#                             logging.info(f"[{ticker}] Starting chart generation...")
-#                             chart_start_time = datetime.now()
-                            
-#                             try:
-#                                 chart_result = safe_chart_generation(ticker, CHART_GENERATION_TIMEOUT)
-#                                 if chart_result is None:
-#                                     raise TimeoutError("Chart generation timed out")
-                                
-#                                 chart_generation_time = (datetime.now() - chart_start_time).total_seconds()
-#                                 logging.info(f"[{ticker}] Chart generation completed successfully in {chart_generation_time:.2f} seconds")
-#                                 chart_generation_status = "success"
-#                             except Exception as e:
-#                                 logging.error(f"[{ticker}] Chart generation failed: {str(e)}")
-#                                 chart_generation_status = "failed"
-#                                 raise e
-                            
-#                             # 2. AI 분석 (타임아웃 적용)
-#                             logging.info(f"[{ticker}] Starting AI analysis...")
-#                             analysis_start_time = datetime.now()
-                            
-#                             try:
-#                                 # 기존 분석 파일 확인 및 유효성 검사
-#                                 today_date_str = datetime.today().strftime("%Y%m%d")
-#                                 html_file_name = f"{ticker}_{today_date_str}.html"
-                                
-#                                 # 날짜별 폴더 구조 사용
-#                                 analysis_date_folder = get_date_folder_path(ANALYSIS_DIR, today_date_str)
-#                                 analysis_html_path = os.path.join(analysis_date_folder, html_file_name)
-                                
-#                                 # 기존 파일이 있지만 유효하지 않으면 삭제
-#                                 if os.path.exists(analysis_html_path):
-#                                     if not is_valid_analysis_file(analysis_html_path):
-#                                         logging.info(f"[{ticker}] Existing analysis file is invalid, will create new one")
-#                                         try:
-#                                             os.remove(analysis_html_path)
-#                                             logging.info(f"[{ticker}] Removed invalid analysis file: {analysis_html_path}")
-#                                         except Exception as e:
-#                                             logging.warning(f"[{ticker}] Failed to remove invalid analysis file: {e}")
-                                
-#                                 # AI 분석에 타임아웃 적용
-#                                 analysis_result = safe_ai_analysis(ticker, AI_ANALYSIS_TIMEOUT)
-#                                 if analysis_result is None:
-#                                     raise TimeoutError("AI analysis timed out")
-                                
-#                                 analysis_data, analysis_status_code = analysis_result
-                                
-#                                 analysis_time = (datetime.now() - analysis_start_time).total_seconds()
-#                                 logging.info(f"[{ticker}] AI analysis completed with status code: {analysis_status_code} in {analysis_time:.2f} seconds")
-#                                 analysis_status = "success"
-                                
-#                                 # 분석 결과 처리
-#                                 if analysis_status_code == 200 and analysis_data.get("success"):
-#                                     list_summaries[ticker] = {
-#                                         "gemini_summary": analysis_data.get("summary_gemini", "요약 없음."),
-#                                         "openai_summary": "OpenAI 분석 비활성화됨",
-#                                         "last_analyzed_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-#                                     }
-#                                 else:
-#                                     analysis_status = f"AI analysis failed: {analysis_data.get('analysis_gemini', 'Unknown error')}"
-#                                     logging.error(f"[{ticker}] AI analysis failed for {ticker}: {analysis_status}")
-#                                     list_summaries[ticker] = {
-#                                         "gemini_summary": analysis_data.get("summary_gemini", "분석 실패."),
-#                                         "openai_summary": "OpenAI 분석 비활성화됨",
-#                                         "last_analyzed_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-#                                     }
-                                     
-#                             except Exception as e:
-#                                 logging.error(f"[{ticker}] AI analysis failed: {str(e)}")
-#                                 analysis_status = "failed"
-#                                 list_summaries[ticker] = {
-#                                     "gemini_summary": "분석 실패.",
-#                                     "openai_summary": "OpenAI 분석 비활성화됨",
-#                                     "last_analyzed_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-#                                 }
-                            
-#                             success = True
-                            
-#                         except Exception as e:
-#                             retry_count += 1
-#                             logging.error(f"[{ticker}] Attempt {retry_count} failed: {str(e)}")
-                            
-#                             if retry_count < max_retries:
-#                                 logging.info(f"[{ticker}] Waiting 5 seconds before retry...")
-#                                 time.sleep(5)
-#                             else:
-#                                 logging.error(f"[{ticker}] All {max_retries} attempts failed for {ticker}")
-#                                 chart_generation_status = "failed"
-#                                 analysis_status = "failed"
-#                                 list_summaries[ticker] = {
-#                                     "gemini_summary": "처리 실패.",
-#                                     "openai_summary": "OpenAI 분석 비활성화됨",
-#                                     "last_analyzed_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-#                                 }
-                        
-#                         # 결과 기록
-#                         list_results.append({
-#                             "ticker": ticker,
-#                             "chart_status": chart_generation_status,
-#                             "analysis_status": analysis_status
-#                         })
-                        
-#                         total_duration = (datetime.now() - ticker_start_time).total_seconds()
-#                         logging.info(f"=== END Processing ticker {i}/{len(tickers_to_process)}: {ticker} from list: {list_name} (Total time: {total_duration:.2f}s) ===")
-                        
-#                         # 처리 시간이 너무 오래 걸리는 경우 경고
-#                         if total_duration > 300:  # 5분 이상
-#                             logging.warning(f"[{ticker}] WARNING: Processing took {total_duration:.2f} seconds (>5 minutes)")
-                
-#                 all_results[list_name] = list_results
-#                 all_summaries[list_name] = list_summaries
-                
-#                 # 개별 리스트 요약 저장
-#                 summary_file_path = get_analysis_summary_path(list_name)
-#                 try:
-#                     with open(summary_file_path, 'w', encoding='utf-8') as f:
-#                         json.dump(list_summaries, f, ensure_ascii=False, indent=4)
-#                     logging.info(f"Summaries for list '{list_name}' saved to {summary_file_path}")
-#                 except Exception as e:
-#                     logging.exception(f"Failed to save summaries for list '{list_name}'")
-            
-#             # 전체 요약을 세션에 저장
-#             session['multiple_lists_summary'] = all_summaries
-#             session['multiple_lists_results'] = all_results
-            
-#             # 성공/실패 통계 계산
-#             total_success = 0
-#             total_failed = 0
-#             for list_name, results in all_results.items():
-#                 if isinstance(results, list):
-#                     success_count = sum(1 for r in results if r.get("chart_status") == "Chart generation succeeded." and r.get("analysis_status") == "AI analysis succeeded.")
-#                     failed_count = len(results) - success_count
-#                     total_success += success_count
-#                     total_failed += failed_count
-            
-#             logging.info(f"Multiple lists batch processing completed: {total_success} successful, {total_failed} failed out of {total_tickers} total")
-            
-#             return jsonify({
-#                 "message": f"Successfully processed {len(selected_lists)} lists.",
-#                 "results": all_results,
-#                 "summary": {
-#                     "total_lists": len(selected_lists),
-#                     "total_tickers": total_tickers,
-#                     "successful": total_success,
-#                     "failed": total_failed,
-#                     "success_rate": f"{(total_success/total_tickers)*100:.1f}%" if total_tickers > 0 else "0%"
-#                 }
-#             }), 200
-            
-#         finally:
-#             # 일괄 처리 종료 기록
-#             end_batch_progress()
-            
-#     except Exception as e:
-#         logging.exception("Error in generate_multiple_lists_analysis")
-#         return jsonify({"error": f"Failed to process multiple lists: {str(e)}"}), 500
-# ==============================================================================
-
+@analysis_bp.route('/resume_batch/<batch_id>', methods=['POST'])
+@login_required
+def resume_batch_analysis_route(batch_id):
+    from tasks.newsletter_tasks import resume_batch_analysis_task # 함수 내에서 임포트
+    task = resume_batch_analysis_task.delay(batch_id)
+    return jsonify({"task_id": task.id})
 
 @analysis_bp.route("/get_indicator_data/<ticker>")
 def get_indicator_data(ticker):

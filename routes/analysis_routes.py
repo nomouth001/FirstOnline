@@ -318,42 +318,23 @@ def generate_multiple_lists_analysis_route():
         
         logging.info(f"Selected lists: {list_names}")
         
-        # DuplicateNodenameWarning 문제를 피하기 위해 Celery 사용하지 않고 직접 동기 방식으로 실행
-        logging.info("Starting multiple lists analysis in synchronous mode (avoiding Celery issues)")
+        # Celery 작업으로 실행 (DuplicateNodenameWarning은 무시)
+        logging.info("Starting multiple lists analysis with Celery")
         
-        # 사용자 정보를 미리 저장 (Flask 컨텍스트 밖에서 접근하기 위해)
-        user_id = current_user.id
-        user_is_admin = current_user.is_admin
-        
-        # 동기 방식으로 다중 리스트 분석 실행
-        from services.batch_analysis_service import run_multiple_lists_analysis_with_user_id
-        
-        # 백그라운드 스레드로 실행하여 응답 지연 방지
-        import threading
-        
-        def run_sync_analysis():
-            try:
-                logging.info(f"Starting synchronous multiple lists analysis for: {list_names}")
-                # Flask 애플리케이션 컨텍스트 설정
-                from flask import current_app
-                with current_app.app_context():
-                    result = run_multiple_lists_analysis_with_user_id(list_names, user_id, user_is_admin)
-                    if result[0]:  # success
-                        logging.info(f"Synchronous multiple lists analysis completed successfully: {result[1]}")
-                    else:
-                        logging.error(f"Synchronous multiple lists analysis failed: {result[1]}")
-            except Exception as e:
-                logging.exception(f"Error in synchronous multiple lists analysis: {e}")
-        
-        thread = threading.Thread(target=run_sync_analysis)
-        thread.daemon = True
-        thread.start()
-        
-        return jsonify({
-            "success": True,
-            "message": f"{len(list_names)}개 리스트의 일괄 분석이 시작되었습니다.",
-            "list_names": list_names
-        }), 202
+        try:
+            task = run_multiple_batch_analysis_task.delay(list_names, current_user.id)
+            logging.info(f"Multiple batch analysis task started for lists: {list_names}, task_id: {task.id}")
+            
+            return jsonify({
+                "success": True,
+                "message": f"{len(list_names)}개 리스트의 일괄 분석이 백그라운드에서 시작되었습니다.",
+                "task_id": task.id,
+                "list_names": list_names
+            }), 202  # 202 Accepted - 작업이 수락되었지만 아직 완료되지 않음
+            
+        except Exception as e:
+            logging.error(f"Celery task creation failed: {e}")
+            return jsonify({"error": f"Failed to start analysis: {str(e)}"}), 500
         
     except json.JSONDecodeError as e:
         logging.exception("JSON decode error in generate_multiple_lists_analysis_route")
